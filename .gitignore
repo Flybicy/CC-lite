@@ -1,0 +1,17 @@
+node_modules/
+dist/
+claudium-cli
+claudium-cli-dev
+claudium-cli.exe
+claudium-cli-dev.exe
+.claude/
+
+# logs & editor
+*.log
+.DS_Store
+*.swp
+*~
+.*tmp*
+
+# build artifacts
+*.tsbuildinfo

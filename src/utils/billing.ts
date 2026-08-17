@@ -1,0 +1,13 @@
+export function isEligibleForExtraUsage() { return false }
+export function hasClaudeAiBillingAccess() { return true }
+export function hasConsoleBillingAccess() { return true }
+export function isConsumerSubscriber() { return false }
+export function isExtraUsageAllowed() { return false }
+export function shouldShowRateLimitWarning() { return false }
+export function getRateLimitTier() { return 'free' }
+export function getBillingInfo() { return null }
+export function isClaudeAISubscriber() { return false }
+export function getSubscriptionType() { return 'free' }
+export function isSubscriptionActive() { return false }
+export function getBillingType() { return 'free' }
+export function hasBillingAccess() { return false }
