@@ -101,6 +101,35 @@ See [FEATURES.md](FEATURES.md) for the full audit of all 88 flags and their stat
 
 ---
 
+## Repository (clone / pull / push)
+
+This repo ships ready for GitHub. To publish your own copy:
+
+```bash
+# 1) Create an empty repo on GitHub (e.g. github.com/you/claudium), then:
+cd claudium
+git remote set-url origin https://github.com/you/claudium.git
+git push -u origin main
+```
+
+To pull updates and rebuild:
+
+```bash
+git pull --ff-only                  # fast-forward only; never auto-merge
+bun install                         # sync deps if package.json/lock changed
+bun run build:dev:claudium          # rebuild claudium-cli-dev
+```
+
+If you have local changes and want to re-sync with upstream cleanly:
+
+```bash
+git stash                           # park your edits
+git pull --ff-only
+git stash pop                       # reapply
+```
+
+---
+
 ## Quick install
 
 ```bash
