@@ -1,5 +1,7 @@
 # Claudium
 
+> **English** · [简体中文](README.zh-CN.md)
+
 All Anthropic OAuth stripped. All telemetry stripped. All injected security-prompt guardrails removed. All experimental features unlocked. One binary, zero callbacks home.
 
 ### Stable (main branch)
@@ -8,7 +10,7 @@ All Anthropic OAuth stripped. All telemetry stripped. All injected security-prom
 curl -fsSL https://raw.githubusercontent.com/Flybicy/claudium/main/install.sh | bash
 ```
 
-> Checks your system, installs Bun if needed, clones, builds with all features enabled, installs `claudium`, and creates a `claudium-bypass` launcher that starts in bypass permission mode. See [API Configuration](#api-configuration) for API setup.
+> One command installs all dependencies first (git, Bun >= 1.3.11, ripgrep), then clones, builds with all features enabled, installs `claudium`, and creates a `claudium-bypass` launcher that starts in bypass permission mode. See [API Configuration](#api-configuration) for API setup.
 
 ### Dev (bleeding edge)
 
@@ -340,7 +342,7 @@ machine. Two backends, resolved in this priority order:
 | Model | Size | Notes |
 |---|---|---|
 | `Xenova/all-MiniLM-L6-v2` (default) | ~23 MB | fast, English-leaning |
-| `Xenova/bge-small-zh-v1.5` | ~25 MB | **recommended for Chinese** conversations |
+| `Xenova/bge-small-zh-v1.5` | ~23 MB | **recommended for Chinese** conversations |
 | `Xenova/multilingual-e5-small` | ~120 MB | strongest multilingual recall |
 
 Pick a model with `CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING_MODEL`. The download
@@ -358,7 +360,7 @@ lands in the cache dir (next to the vector cache) and is reused forever.
 **Example (Chinese conversations):**
 ```bash
 export CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING_MODEL="Xenova/bge-small-zh-v1.5"
-# first semantic search downloads ~25 MB once; everything is offline after that
+# first semantic search downloads ~23 MB once; everything is offline after that
 ```
 
 If the model tier is unavailable (e.g. inside the compiled binary without
