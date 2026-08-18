@@ -31,21 +31,10 @@ fail()  { printf "${RED}[x]${RESET} %s\n" "$*"; exit 1; }
 
 header() {
   echo ""
-  printf "${BOLD}${ORANGE}"
-  cat << 'ART'
-
-_________   .__                         .___ .__
-\_   ___ \  |  |   _____     __ __    __| _/ |__|  __ __    _____
-/    \  \/  |  |   \__  \   |  |  \  / __ |  |  | |  |  \  /     \
-\     \____ |  |__  / __ \_ |  |  / / /_/ |  |  | |  |  / |  Y Y  \
- \______  / |____/ (____  / |____/  \____ |  |__| |____/  |__|_|  /
-        \/              \/               \/                     \/
-
-ART
-  printf "${RESET}"
+  printf "${BOLD}${CYAN}CC-lite${RESET}${YELLOW} (dev)${RESET} installer"
   echo ""
-  printf "  ${YELLOW}DEV BRANCH INSTALLER${RESET}\n"
-  printf "  ${DIM}Installs from the ${BOLD}dev${RESET}${DIM} branch.${RESET}\n"
+  printf "  ${DIM}Installs from the ${BOLD}dev${RESET}${DIM} branch.${RESET}"
+  echo ""
   echo ""
 }
 

@@ -70,12 +70,7 @@ function Compare-VersionGe([string]$a, [string]$b) {
 # --- header ---
 function Show-Header {
   Write-Host ""
-  Write-Host "_________   .__                         .___ .__" -ForegroundColor DarkYellow
-  Write-Host "\_   ___ \  |  |   _____     __ __    __| _/ |__|  __ __    _____"
-  Write-Host "/    \  \/  |  |   \__  \   |  |  \  / __ |  |  | |  |  \  /     \"
-  Write-Host "\     \____ |  |__  / __ \_ |  |  / / /_/ |  |  | |  |  / |  Y Y  \"
-  Write-Host " \______  / |____/ (____  / |____/  \____ |  |__| |____/  |__|_|  /"
-  Write-Host "        \/              \/               \/                     \/" -ForegroundColor DarkYellow
+  Write-Host "CC-lite installer" -ForegroundColor Cyan
   Write-Host ""
 }
 
