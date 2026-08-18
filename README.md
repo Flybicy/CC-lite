@@ -5,7 +5,7 @@ All Anthropic OAuth stripped. All telemetry stripped. All injected security-prom
 ### Stable (main branch)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/DdogezD/claudium/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Flybicy/claudium/main/install.sh | bash
 ```
 
 > Checks your system, installs Bun if needed, clones, builds with all features enabled, installs `claudium`, and creates a `claudium-bypass` launcher that starts in bypass permission mode. See [API Configuration](#api-configuration) for API setup.
@@ -13,7 +13,7 @@ curl -fsSL https://raw.githubusercontent.com/DdogezD/claudium/main/install.sh | 
 ### Dev (bleeding edge)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/DdogezD/claudium/main/install_dev.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Flybicy/claudium/main/install_dev.sh | bash
 ```
 
 > Installs from the `dev` branch as `claudium` (and `claudium-bypass`). Same binary names as the stable installer — only the source branch differs.
@@ -133,7 +133,7 @@ git stash pop                       # reapply
 ## Quick install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/DdogezD/claudium/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Flybicy/claudium/main/install.sh | bash
 ```
 
 One command does everything: it installs **all dependencies first** (git,
@@ -153,7 +153,7 @@ and ripgrep -- via winget/choco/scoop), then clones the repo, runs
 `bun install`, and builds a `claudium-cli-dev.exe`:
 
 ```powershell
-irm https://raw.githubusercontent.com/DdogezD/claudium/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/Flybicy/claudium/main/install.ps1 | iex
 ```
 
 Or, if you already have Bun + ripgrep, build from source as on any other OS
@@ -183,7 +183,7 @@ curl -fsSL https://bun.sh/install | bash
 
 ```bash
 # Clone the repo
-git clone https://github.com/DdogezD/claudium.git
+git clone https://github.com/Flybicy/claudium.git
 cd claudium
 
 # Install dependencies

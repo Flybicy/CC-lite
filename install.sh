@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # claudium installer
-# Usage: curl -fsSL https://raw.githubusercontent.com/DdogezD/claudium/main/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/Flybicy/claudium/main/install.sh | bash
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -13,7 +13,7 @@ BOLD='\033[1m'
 DIM='\033[2m'
 RESET='\033[0m'
 
-REPO="https://github.com/DdogezD/claudium.git"
+REPO="https://github.com/Flybicy/claudium.git"
 BUILD_DIR="$HOME/.cache/claudium"
 INSTALL_DIR="$HOME/.local/bin"
 BUN_MIN_VERSION="1.3.11"

@@ -8,13 +8,13 @@
   claudium.exe under a directory on PATH.
 .NOTES
   Usage (run from an elevated or normal PowerShell 5.1+ / PowerShell 7+ window):
-    irm https://raw.githubusercontent.com/DdogezD/claudium/main/install.ps1 | iex
+    irm https://raw.githubusercontent.com/Flybicy/claudium/main/install.ps1 | iex
   Or save and run:
     ./install.ps1 [-InstallDir <path>] [-Repo <url>] [-SkipBuild]
 #>
 [CmdletBinding()]
 param(
-  [string]$Repo      = "https://github.com/DdogezD/claudium.git",
+  [string]$Repo      = "https://github.com/Flybicy/claudium.git",
   [string]$InstallDir,
   [string]$BuildDir,
   [switch]$SkipBuild,

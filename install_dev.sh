@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # claudium dev installer — builds from the dev branch, installs as claudium
-# Usage: curl -fsSL https://raw.githubusercontent.com/DdogezD/claudium/main/install_dev.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/Flybicy/claudium/main/install_dev.sh | bash
 
 # Override these two before sourcing the shared install logic
 BRANCH="dev"
@@ -20,7 +20,7 @@ BOLD='\033[1m'
 DIM='\033[2m'
 RESET='\033[0m'
 
-REPO="https://github.com/DdogezD/claudium.git"
+REPO="https://github.com/Flybicy/claudium.git"
 INSTALL_DIR="$HOME/.local/bin"
 BUN_MIN_VERSION="1.3.11"
 
