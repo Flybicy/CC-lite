@@ -136,13 +136,21 @@ git stash pop                       # reapply
 curl -fsSL https://raw.githubusercontent.com/DdogezD/claudium/main/install.sh | bash
 ```
 
-This will check your system, install Bun if needed, clone the repo, build the binary `claudium-cli-dev` (with all experimental features enabled), install it as `claudium`, and create a `claudium-bypass` launcher in `~/.local/bin`.
+One command does everything: it installs **all dependencies first** (git,
+Bun >= 1.3.11, and ripgrep -- via your system package manager: apt / dnf /
+yum / pacman / zypper / apk / brew; on Windows Git Bash: scoop / choco /
+winget or a direct release download), then clones the repo source, runs
+`bun install` (project dependencies incl. the local-semantic embedding
+runtime), builds the binary `claudium-cli-dev` (all experimental features
+enabled), installs it as `claudium`, and creates a `claudium-bypass`
+launcher in `~/.local/bin`.
 
 ### Windows (native)
 
 Claudium builds and runs natively on Windows (no WSL needed). Use the
-PowerShell installer, which installs Bun and ripgrep (via winget/choco/scoop)
-and builds a `claudium-cli-dev.exe`:
+PowerShell installer, which installs **all dependencies first** (git, Bun,
+and ripgrep -- via winget/choco/scoop), then clones the repo, runs
+`bun install`, and builds a `claudium-cli-dev.exe`:
 
 ```powershell
 irm https://raw.githubusercontent.com/DdogezD/claudium/main/install.ps1 | iex

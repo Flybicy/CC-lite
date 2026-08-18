@@ -54,23 +54,123 @@ check_os() {
   ok "OS: $(uname -s) $(uname -m)"
 }
 
-check_git() {
-  if ! command -v git &>/dev/null; then
-    fail "git is not installed. Install it first:
-    macOS:  xcode-select --install
-    Linux:  sudo apt install git  (or your distro's equivalent)"
+# Detect the system package manager (empty when none is known).
+detect_pkg_mgr() {
+  if   command -v apt-get &>/dev/null; then echo apt
+  elif command -v dnf     &>/dev/null; then echo dnf
+  elif command -v yum     &>/dev/null; then echo yum
+  elif command -v pacman  &>/dev/null; then echo pacman
+  elif command -v zypper  &>/dev/null; then echo zypper
+  elif command -v apk     &>/dev/null; then echo apk
+  elif command -v brew    &>/dev/null; then echo brew
+  else echo ""
   fi
-  ok "git: $(git --version | head -1)"
+}
+
+# Install a package with the detected package manager (best effort).
+pkg_install() {
+  local name="$1" mgr
+  mgr="$(detect_pkg_mgr)"
+  [ -z "$mgr" ] && return 1
+  local SUDO=""
+  if [ "$(id -u)" -ne 0 ] && command -v sudo &>/dev/null; then SUDO="sudo"; fi
+  info "Installing $name via $mgr..."
+  case "$mgr" in
+    apt)    $SUDO apt-get update -qq && $SUDO apt-get install -y "$name" ;;
+    dnf)    $SUDO dnf install -y "$name" ;;
+    yum)    $SUDO yum install -y "$name" ;;
+    pacman) $SUDO pacman -Sy --noconfirm "$name" ;;
+    zypper) $SUDO zypper --non-interactive install "$name" ;;
+    apk)    $SUDO apk add "$name" ;;
+    brew)   brew install "$name" ;;
+    *)      return 1 ;;
+  esac
+}
+
+check_git() {
+  if command -v git &>/dev/null; then
+    ok "git: $(git --version | head -1)"
+    return
+  fi
+  info "git not found. Installing..."
+  if [ "$OS" = "macos" ] && ! command -v brew &>/dev/null; then
+    # No package manager on macOS: trigger the Xcode CLT installer.
+    xcode-select --install 2>/dev/null || true
+    fail "git is not installed. The Xcode Command Line Tools installer was
+    triggered - re-run this script when it finishes. Or install Homebrew
+    (https://brew.sh) and run: brew install git"
+  fi
+  pkg_install git || true
+  if ! command -v git &>/dev/null; then
+    fail "git could not be installed automatically. Install it manually:
+    macOS:  brew install git   (or xcode-select --install)
+    Linux:  sudo apt install git   (or dnf/yum/pacman/zypper/apk equivalent)
+    Windows: winget install Git.Git"
+  fi
+  ok "git: $(git --version | head -1) (installed)"
+}
+
+# Windows (Git Bash): try scoop/choco/winget, else download the official
+# ripgrep release zip straight into ~/.local/bin.
+install_rg_windows() {
+  if command -v scoop &>/dev/null; then
+    info "Trying scoop install ripgrep..."
+    scoop install ripgrep 2>/dev/null || true
+  fi
+  if ! command -v rg &>/dev/null && command -v choco &>/dev/null; then
+    info "Trying choco install ripgrep..."
+    choco install ripgrep -y 2>/dev/null || true
+  fi
+  if ! command -v rg &>/dev/null && command -v winget &>/dev/null; then
+    info "Trying winget install ripgrep..."
+    winget install --id BurntSushi.ripgrep.MSVC -e --silent       --accept-package-agreements --accept-source-agreements 2>/dev/null || true
+  fi
+  if command -v rg &>/dev/null; then return 0; fi
+
+  info "Downloading ripgrep release zip..."
+  local ver="14.1.1"
+  local url="https://github.com/BurntSushi/ripgrep/releases/download/${ver}/ripgrep-${ver}-x86_64-pc-windows-msvc.zip"
+  local tmp; tmp="$(mktemp -d)"
+  if ! curl -fsSL "$url" -o "$tmp/rg.zip"; then
+    rm -rf "$tmp"; return 1
+  fi
+  mkdir -p "$INSTALL_DIR"
+  if command -v unzip &>/dev/null; then
+    unzip -o -j "$tmp/rg.zip" "*/rg.exe" -d "$INSTALL_DIR" || { rm -rf "$tmp"; return 1; }
+  else
+    # Git Bash without unzip: ask PowerShell to expand the archive.
+    local win_tmp win_dest
+    win_tmp="$(cygpath -w "$tmp/rg.zip" 2>/dev/null || echo "$tmp/rg.zip")"
+    win_dest="$(cygpath -w "$tmp" 2>/dev/null || echo "$tmp")"
+    powershell.exe -NoProfile -Command       "Expand-Archive -Force '$win_tmp' '$win_dest'" || { rm -rf "$tmp"; return 1; }
+    cp "$tmp"/ripgrep-*/rg.exe "$INSTALL_DIR/rg.exe" 2>/dev/null || { rm -rf "$tmp"; return 1; }
+  fi
+  rm -rf "$tmp"
+  command -v rg &>/dev/null || [ -f "$INSTALL_DIR/rg.exe" ]
 }
 
 check_rg() {
-  if ! command -v rg &>/dev/null; then
-    warn "ripgrep (rg) not found — install it for best results:
-    macOS:   brew install ripgrep
-    Linux:   sudo apt install ripgrep
-    Windows: scoop install ripgrep  (or winget/choco, see README.md)"
-  else
+  if command -v rg &>/dev/null; then
     ok "rg: $(rg --version | head -1)"
+    return
+  fi
+  info "ripgrep (rg) not found. Installing..."
+  if [ "$OS" = "windows" ]; then
+    install_rg_windows || true
+  else
+    pkg_install ripgrep || true
+  fi
+  # hash -r so a just-installed rg is picked up in this shell
+  hash -r 2>/dev/null || true
+  if command -v rg &>/dev/null; then
+    ok "rg: $(rg --version | head -1) (installed)"
+  elif [ -f "$INSTALL_DIR/rg.exe" ]; then
+    ok "rg: installed to $INSTALL_DIR/rg.exe"
+  else
+    fail "ripgrep is required but could not be installed automatically. Install it manually:
+    macOS:   brew install ripgrep
+    Linux:   sudo apt install ripgrep   (or dnf/yum/pacman/zypper/apk equivalent)
+    Windows: winget install BurntSushi.ripgrep.MSVC   (or scoop/choco install ripgrep)"
   fi
 }
 

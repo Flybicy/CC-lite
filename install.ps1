@@ -38,6 +38,14 @@ function Test-Command { param([string]$c)
   return [bool](Get-Command $c -ErrorAction SilentlyContinue)
 }
 
+function Update-SessionPath {
+  # Installers (winget/scoop/choco) update the registry PATH but not the
+  # current session; re-read Machine+User PATH so freshly installed tools
+  # become visible immediately.
+  $env:PATH = [Environment]::GetEnvironmentVariable('PATH','Machine') + ';' +
+              [Environment]::GetEnvironmentVariable('PATH','User')
+}
+
 function Get-BunVersion {
   if (Test-Command bun) {
     try { return (bun --version) } catch { return "0.0.0" }
@@ -76,10 +84,37 @@ function Check-Prerequisites {
   Write-Info "Checking system..."
   if ($PSVersionTable.PSVersion.Major -lt 5) { Write-Fail "PowerShell 5.1+ required." }
   Write-Ok "PowerShell $($PSVersionTable.PSVersion)"
-  if (-not (Test-Command git)) {
-    Write-Fail "git not found. Install Git for Windows: https://git-scm.com/download/win"
+}
+
+function Ensure-Git {
+  if (Test-Command git) {
+    Write-Ok "git: $(git --version | Select-Object -First 1)"
+    return
   }
-  Write-Ok "git: $(git --version | Select-Object -First 1)"
+  Write-Info "git not found. Installing..."
+  if (Test-Command winget) {
+    Write-Info "Trying winget install Git.Git..."
+    winget install --id Git.Git -e --silent --accept-package-agreements --accept-source-agreements 2>$null
+  }
+  Update-SessionPath
+  if (-not (Test-Command git) -and (Test-Command scoop)) {
+    Write-Info "Trying scoop install git..."
+    scoop install git 2>$null
+    Update-SessionPath
+  }
+  if (-not (Test-Command git) -and (Test-Command choco)) {
+    Write-Info "Trying choco install git..."
+    choco install git -y 2>$null
+    Update-SessionPath
+  }
+  if (Test-Command git) {
+    Write-Ok "git: $(git --version | Select-Object -First 1) (installed)"
+    return
+  }
+  Write-Warn "Automatic git install failed. Install manually:"
+  Write-Host "  winget install Git.Git"
+  Write-Host "  OR download: https://git-scm.com/download/win"
+  Write-Fail "git is required but not on PATH."
 }
 
 function Ensure-Bun {
@@ -106,6 +141,7 @@ function Ensure-Bun {
   }
 
   # Re-check after package manager installs
+  Update-SessionPath
   $ver = Get-BunVersion
   if ($ver -and (Compare-VersionGe $ver $BunMinVersion)) {
     Write-Ok "bun: v$ver (installed)"
@@ -148,6 +184,7 @@ function Ensure-Ripgrep {
   if (-not (Test-Command rg) -and (Test-Command choco)) {
     choco install ripgrep -y 2>$null
   }
+  Update-SessionPath
   if (Test-Command rg) { Write-Ok "rg installed" }
   else {
     Write-Warn "Automatic ripgrep install failed. Install manually:"
@@ -235,6 +272,7 @@ function Main {
   Write-Info "Starting installation..."
   Write-Host ""
   Check-Prerequisites
+  Ensure-Git
   Ensure-Bun
   Ensure-Ripgrep
   Write-Host ""
