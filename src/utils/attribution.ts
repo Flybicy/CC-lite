@@ -284,7 +284,7 @@ async function getTranscriptStats(): Promise<{
 /**
  * Get enhanced PR attribution text with Claude contribution stats.
  *
- * Format: "🤖 Generated with Claudium (93% 3-shotted by claude-opus-4-5)"
+ * Format: "🤖 Generated with CC-lite (93% 3-shotted by claude-opus-4-5)"
  *
  * Rules:
  * - Shows Claude contribution percentage from commit attribution

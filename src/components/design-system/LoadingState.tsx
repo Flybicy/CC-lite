@@ -42,7 +42,7 @@ type LoadingStateProps = {
  * <LoadingState
  *   message="Loading sessions"
  *   bold
- *   subtitle="Fetching your Claudium sessions..."
+ *   subtitle="Fetching your CC-lite sessions..."
  * />
  */
 export function LoadingState(t0) {

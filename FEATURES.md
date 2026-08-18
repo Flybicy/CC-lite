@@ -16,13 +16,13 @@ externalized `@ant/*` packages.
 ## Build Variants
 
 - `bun run build`
-  Builds the regular external binary at `./claudium-cli`.
+  Builds the regular external binary at `./cc-lite-cli`.
 - `bun run compile`
-  Builds the regular external binary at `./dist/claudium-cli`.
+  Builds the regular external binary at `./dist/cc-lite-cli`.
 - `bun run build:dev`
-  Builds `./claudium-cli-dev` with a dev-stamped version and experimental GrowthBook key.
+  Builds `./cc-lite-cli-dev` with a dev-stamped version and experimental GrowthBook key.
 - `bun run build:dev:full`
-  Builds `./claudium-cli-dev` with the entire current "Working Experimental Features"
+  Builds `./cc-lite-cli-dev` with the entire current "Working Experimental Features"
   bundle from this document, minus `CHICAGO_MCP`. That flag still compiles,
   but the external binary does not boot cleanly with it because startup
   reaches the missing `@ant/computer-use-mcp` runtime package.
@@ -32,7 +32,7 @@ externalized `@ant/*` packages.
 - `VOICE_MODE`
   This is now included in the default build pipeline, not just the dev build.
   It enables `/voice`, push-to-talk UI, voice notices, and dictation plumbing.
-  Note: claude.ai OAuth has been stripped in Claudium. Voice mode requires a
+  Note: claude.ai OAuth has been stripped in CC-lite. Voice mode requires a
   local recording backend (e.g., SoX).
 
 ## Working Experimental Features
@@ -81,7 +81,7 @@ explicitly called out as default-on.
 - `AGENT_TRIGGERS`
   Enables local cron/trigger tools and bundled trigger-related skills.
 - `AGENT_TRIGGERS_REMOTE`
-  Enables the remote trigger tool path. NOT included in the full/claudium
+  Enables the remote trigger tool path. NOT included in the full/cc-lite
   feature sets: the remote trigger tool and its bundled skill depend on
   claude.ai OAuth + remote CCR sessions, which this fork strips entirely.
 - `BUILTIN_EXPLORE_PLAN_AGENTS`
@@ -106,13 +106,13 @@ explicitly called out as default-on.
 - `BRIDGE_MODE`
   Enables Remote Control / REPL bridge command and entitlement paths.
 - `CCR_AUTO_CONNECT`
-  Enables the CCR auto-connect default path. NOT in the full/claudium feature
+  Enables the CCR auto-connect default path. NOT in the full/cc-lite feature
   sets: dead without claude.ai OAuth (stripped in this fork).
 - `CCR_MIRROR`
-  Enables outbound-only CCR mirror sessions. NOT in the full/claudium feature
+  Enables outbound-only CCR mirror sessions. NOT in the full/cc-lite feature
   sets: dead without claude.ai OAuth (stripped in this fork).
 - `CCR_REMOTE_SETUP`
-  Enables the remote setup command path. NOT in the full/claudium feature
+  Enables the remote setup command path. NOT in the full/cc-lite feature
   sets: its command module (`commands/remote-setup`) was removed with the
   rest of the remote CCR session code; enabling the flag breaks the build.
 - `CHICAGO_MCP`
@@ -178,7 +178,7 @@ These bundle today, but I would still treat them as experimental because they
 have meaningful runtime caveats:
 
 - `VOICE_MODE`
-  Bundles cleanly. claude.ai OAuth has been stripped in Claudium; requires a
+  Bundles cleanly. claude.ai OAuth has been stripped in CC-lite; requires a
   local recording backend. The native audio module is optional; on this machine
   the fallback path asks for `brew install sox`.
 - `NATIVE_CLIPBOARD_IMAGE`
@@ -186,9 +186,9 @@ have meaningful runtime caveats:
   `image-processor-napi` is present.
 - `BRIDGE_MODE`
   Bundles cleanly, but is gated at runtime on claude.ai OAuth plus GrowthBook
-  entitlement checks. Note: claude.ai OAuth has been stripped in Claudium, so
+  entitlement checks. Note: claude.ai OAuth has been stripped in CC-lite, so
   this feature is unavailable at runtime. (`CCR_AUTO_CONNECT`, `CCR_MIRROR`,
-  and `CCR_REMOTE_SETUP` were additionally removed from the full/claudium
+  and `CCR_REMOTE_SETUP` were additionally removed from the full/cc-lite
   feature sets - see their entries above.)
 - `KAIROS_BRIEF`, `KAIROS_CHANNELS`
   Bundle cleanly, but they do not restore the full missing assistant stack.

@@ -1019,7 +1019,7 @@ export function Config({
     });
     // Check for API key changes
     // On homespace, ANTHROPIC_API_KEY is preserved in process.env for child
-    // processes but ignored by Claudium itself (see auth.ts).
+    // processes but ignored by CC-lite itself (see auth.ts).
     const effectiveApiKey = isRunningOnHomespace() ? undefined : process.env.ANTHROPIC_API_KEY;
     const initialUsingCustomKey = Boolean(effectiveApiKey && initialConfig.current.customApiKeyResponses?.approved?.includes(normalizeApiKeyForConfig(effectiveApiKey)));
     const currentUsingCustomKey = Boolean(effectiveApiKey && globalConfig.customApiKeyResponses?.approved?.includes(normalizeApiKeyForConfig(effectiveApiKey)));
@@ -1543,7 +1543,7 @@ export function Config({
         </> : showSubmenu === 'AdvisorPreference' ? <>
           <Dialog title="Advisor preference" onCancel={() => { setShowSubmenu(null); setTabsHidden(false); }} hideInputGuide hideBorder>
         <Box marginTop={1} flexDirection="column" gap={1}>
-          <Text dimColor>Controls how proactively Claudium uses the Advisor tool</Text>
+          <Text dimColor>Controls how proactively CC-lite uses the Advisor tool</Text>
           <Select options={ADVISOR_PREFERENCE_OPTIONS} onChange={(value: string) => {
             isDirty.current = true
             setCurrentAdvisorPreference(value)

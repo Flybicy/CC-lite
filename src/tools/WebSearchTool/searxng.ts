@@ -222,6 +222,6 @@ function getSearxngUserAgent(): string {
   try {
     return getUserAgent()
   } catch {
-    return 'claudium-searxng'
+    return 'cc-lite-searxng'
   }
 }

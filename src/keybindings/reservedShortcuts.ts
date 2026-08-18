@@ -11,7 +11,7 @@ export type ReservedShortcut = {
 }
 
 /**
- * Shortcuts that cannot be rebound - they are hardcoded in Claudium.
+ * Shortcuts that cannot be rebound - they are hardcoded in CC-lite.
  */
 export const NON_REBINDABLE: ReservedShortcut[] = [
   {

@@ -1,9 +1,9 @@
 node_modules/
 dist/
-claudium-cli
-claudium-cli-dev
-claudium-cli.exe
-claudium-cli-dev.exe
+cc-lite-cli
+cc-lite-cli-dev
+cc-lite-cli.exe
+cc-lite-cli-dev.exe
 .claude/
 
 # logs & editor

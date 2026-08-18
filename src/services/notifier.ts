@@ -35,7 +35,7 @@ export async function sendNotification(
   })
 }
 
-const DEFAULT_TITLE = 'Claudium'
+const DEFAULT_TITLE = 'CC-lite'
 
 async function sendToChannel(
   channel: string,

@@ -222,7 +222,7 @@ export function Doctor(t0) {
   let t7;
   if ($[11] !== onDone) {
     t7 = () => {
-      onDone("Claudium diagnostics dismissed", {
+      onDone("CC-lite diagnostics dismissed", {
         display: "system"
       });
     };

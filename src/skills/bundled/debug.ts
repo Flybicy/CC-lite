@@ -92,7 +92,7 @@ Remember that settings are in:
 
 1. Review the user's issue description
 2. The last ${DEFAULT_DEBUG_LINES_READ} lines show the debug file format. Look for [ERROR] and [WARN] entries, stack traces, and failure patterns across the file
-3. Consider launching the general-purpose subagent to understand the relevant Claudium features
+3. Consider launching the general-purpose subagent to understand the relevant CC-lite features
 4. Explain what you found in plain language
 5. Suggest concrete fixes or next steps
 `

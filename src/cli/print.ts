@@ -3443,7 +3443,7 @@ function runHeadlessStreaming(
         } else if (message.request.subtype === 'claude_authenticate') {
           sendControlResponseError(
             message,
-            'OAuth authentication has been stripped from Claudium.',
+            'OAuth authentication has been stripped from CC-lite.',
           )
         } else if (
           message.request.subtype === 'claude_oauth_callback' ||
@@ -3451,7 +3451,7 @@ function runHeadlessStreaming(
         ) {
           sendControlResponseError(
             message,
-            'OAuth authentication has been stripped from Claudium.',
+            'OAuth authentication has been stripped from CC-lite.',
           )
         } else if (message.request.subtype === 'mcp_clear_auth') {
           const { serverName } = message.request

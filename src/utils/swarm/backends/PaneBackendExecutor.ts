@@ -110,7 +110,7 @@ export class PaneBackendExecutor implements TeammateExecutor {
         await this.backend.enablePaneBorderStatus()
       }
 
-      // Build the command to spawn Claudium with teammate identity
+      // Build the command to spawn CC-lite with teammate identity
       const binaryPath = getTeammateCommand()
 
       // Build teammate identity CLI args

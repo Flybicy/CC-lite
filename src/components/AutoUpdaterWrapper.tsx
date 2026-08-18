@@ -1,5 +1,5 @@
 /**
- * AutoUpdaterWrapper stub for claudium
+ * AutoUpdaterWrapper stub for cc-lite
  * All auto-update functionality disabled
  */
 

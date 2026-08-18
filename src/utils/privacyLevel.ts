@@ -1,6 +1,6 @@
 /**
  * Privacy level controls how much nonessential network traffic and telemetry
- * Claudium generates.
+ * CC-lite generates.
  *
  * Levels are ordered by restrictiveness:
  *   default < no-telemetry < essential-traffic

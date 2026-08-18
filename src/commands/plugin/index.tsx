@@ -3,7 +3,7 @@ const plugin = {
   type: 'local-jsx',
   name: 'plugin',
   aliases: ['plugins', 'marketplace'],
-  description: 'Manage Claudium plugins',
+  description: 'Manage CC-lite plugins',
   immediate: true,
   load: () => import('./plugin.js')
 } satisfies Command;

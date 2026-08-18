@@ -5,7 +5,7 @@ import { getPlatform } from '../utils/platform.js'
 import type { KeybindingBlock } from './types.js'
 
 /**
- * Default keybindings that match current Claudium behavior.
+ * Default keybindings that match current CC-lite behavior.
  * These are loaded first, then user keybindings.json overrides them.
  */
 

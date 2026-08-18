@@ -84,8 +84,8 @@ for (let i = 0; i < args.length; i += 1) {
       for (const feature of fullExperimentalFeatures) {
         featureSet.add(feature)
       }
-    } else if (args[i + 1] === 'claudium') {
-      const claudiumFeatures = [
+    } else if (args[i + 1] === 'cc-lite') {
+      const ccLiteFeatures = [
         'AGENT_MEMORY_SNAPSHOT',
         'AGENT_TRIGGERS',
               'AWAY_SUMMARY',
@@ -115,7 +115,7 @@ for (let i = 0; i < args.length; i += 1) {
         'VERIFICATION_AGENT',
         'VOICE_MODE',
       ]
-      for (const feature of claudiumFeatures) {
+      for (const feature of ccLiteFeatures) {
         featureSet.add(feature)
       }
     }
@@ -139,7 +139,7 @@ for (let i = 0; i < args.length; i += 1) {
 }
 const features = [...featureSet]
 
-const outfileName = dev ? 'claudium-cli-dev' : 'claudium-cli'
+const outfileName = dev ? 'cc-lite-cli-dev' : 'cc-lite-cli'
 const outfile = compile ? `./dist/${outfileName}` : `./${outfileName}`
 const buildTime = new Date().toISOString()
 const version = dev ? getDevVersion(pkg.version) : pkg.version
@@ -181,7 +181,7 @@ const defines = {
     'This reconstructed source snapshot does not include Anthropic internal issue routing.',
   ),
   'MACRO.VERSION_CHANGELOG': JSON.stringify(
-    dev ? getVersionChangelog() : 'https://github.com/DdogezD/claudium',
+    dev ? getVersionChangelog() : 'https://github.com/Flybicy/CC-lite',
   ),
 } as const
 

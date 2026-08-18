@@ -6,8 +6,8 @@
   "type": "module",
   "packageManager": "bun@1.3.11",
   "bin": {
-    "claudium": "./claudium-cli",
-    "claudium-source": "./claudium-cli"
+    "cc-lite": "./cc-lite-cli",
+    "cc-lite-source": "./cc-lite-cli"
   },
   "engines": {
     "bun": ">=1.3.11"
@@ -16,7 +16,7 @@
     "build": "bun run ./scripts/build.ts",
     "build:dev": "bun run ./scripts/build.ts --dev",
     "build:dev:full": "bun run ./scripts/build.ts --dev --feature-set=dev-full",
-    "build:dev:claudium": "bun run ./scripts/build.ts --dev --feature-set=claudium",
+    "build:dev:cc-lite": "bun run ./scripts/build.ts --dev --feature-set=cc-lite",
     "compile": "bun run ./scripts/build.ts --compile",
     "dev": "bun run ./src/entrypoints/cli.tsx"
   },

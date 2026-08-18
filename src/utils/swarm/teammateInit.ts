@@ -1,7 +1,7 @@
 /**
  * Teammate Initialization Module
  *
- * Handles initialization for Claudium instances running as teammates in a swarm.
+ * Handles initialization for CC-lite instances running as teammates in a swarm.
  * Registers a Stop hook to notify the team leader when the teammate becomes idle.
  */
 

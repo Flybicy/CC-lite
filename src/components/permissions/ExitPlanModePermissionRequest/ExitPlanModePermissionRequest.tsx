@@ -730,7 +730,7 @@ export function buildPlanApprovalOptions({
   });
   if (showUltraplan) {
     options.push({
-      label: 'No, refine with Ultraplan on Claudium on the web',
+      label: 'No, refine with Ultraplan on CC-lite on the web',
       value: 'ultraplan'
     });
   }

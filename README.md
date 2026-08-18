@@ -1,4 +1,4 @@
-# Claudium
+# CC-lite
 
 > **English** · [简体中文](README.zh-CN.md)
 
@@ -7,21 +7,21 @@ All Anthropic OAuth stripped. All telemetry stripped. All injected security-prom
 ### Stable (main branch)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Flybicy/claudium/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Flybicy/CC-lite/main/install.sh | bash
 ```
 
-> One command installs all dependencies first (git, Bun >= 1.3.11, ripgrep), then clones, builds with all features enabled, installs `claudium`, and creates a `claudium-bypass` launcher that starts in bypass permission mode. See [API Configuration](#api-configuration) for API setup.
+> One command installs all dependencies first (git, Bun >= 1.3.11, ripgrep), then clones, builds with all features enabled, installs `cc-lite`, and creates a `cc-lite-bypass` launcher that starts in bypass permission mode. See [API Configuration](#api-configuration) for API setup.
 
 ### Dev (bleeding edge)
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Flybicy/claudium/main/install_dev.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Flybicy/CC-lite/main/install_dev.sh | bash
 ```
 
-> Installs from the `dev` branch as `claudium` (and `claudium-bypass`). Same binary names as the stable installer — only the source branch differs.
+> Installs from the `dev` branch as `cc-lite` (and `cc-lite-bypass`). Same binary names as the stable installer — only the source branch differs.
 
 <p align="center">
-  <img src="assets/screenshot.png" alt="claudium screenshot" width="800" />
+  <img src="assets/screenshot.png" alt="cc-lite screenshot" width="800" />
 </p>
 
 ---
@@ -43,7 +43,7 @@ Eliminates all tracking and remote-control mechanisms present in the original Cl
 
 ### 2. OAuth and Cloud Services Stripped
 
-Unlike the upstream Claude Code, Claudium has no OAuth login, no claude.ai remote sessions, and no cloud provider integration:
+Unlike the upstream Claude Code, CC-lite has no OAuth login, no claude.ai remote sessions, and no cloud provider integration:
 
 - No `/login` command -- authenticating with claude.ai OAuth is removed
 - No remote CCR sessions -- all bridge/remote session code is stripped
@@ -55,7 +55,7 @@ All authentication is done via API keys (see [API Configuration](#api-configurat
 
 ### 3. OpenAI-compatible API support
 
-Added an API shim layer (`src/services/api/openaiShim.ts`) that transparently translates between Anthropic message format and OpenAI-compatible APIs. It supports both Chat Completions and the newer Responses API, so all Claudium tools (bash, file read/write, grep, glob, agents, MCP, etc.) keep working while you swap in a different backend LLM.
+Added an API shim layer (`src/services/api/openaiShim.ts`) that transparently translates between Anthropic message format and OpenAI-compatible APIs. It supports both Chat Completions and the newer Responses API, so all CC-lite tools (bash, file read/write, grep, glob, agents, MCP, etc.) keep working while you swap in a different backend LLM.
 
 ### 4. SearXNG-backed WebSearch
 
@@ -108,9 +108,9 @@ See [FEATURES.md](FEATURES.md) for the full audit of all 88 flags and their stat
 This repo ships ready for GitHub. To publish your own copy:
 
 ```bash
-# 1) Create an empty repo on GitHub (e.g. github.com/you/claudium), then:
-cd claudium
-git remote set-url origin https://github.com/you/claudium.git
+# 1) Create an empty repo on GitHub (e.g. github.com/you/cc-lite), then:
+cd cc-lite
+git remote set-url origin https://github.com/you/cc-lite.git
 git push -u origin main
 ```
 
@@ -119,7 +119,7 @@ To pull updates and rebuild:
 ```bash
 git pull --ff-only                  # fast-forward only; never auto-merge
 bun install                         # sync deps if package.json/lock changed
-bun run build:dev:claudium          # rebuild claudium-cli-dev
+bun run build:dev:cc-lite          # rebuild cc-lite-cli-dev
 ```
 
 If you have local changes and want to re-sync with upstream cleanly:
@@ -135,7 +135,7 @@ git stash pop                       # reapply
 ## Quick install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Flybicy/claudium/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Flybicy/CC-lite/main/install.sh | bash
 ```
 
 One command does everything: it installs **all dependencies first** (git,
@@ -143,27 +143,27 @@ Bun >= 1.3.11, and ripgrep -- via your system package manager: apt / dnf /
 yum / pacman / zypper / apk / brew; on Windows Git Bash: scoop / choco /
 winget or a direct release download), then clones the repo source, runs
 `bun install` (project dependencies incl. the local-semantic embedding
-runtime), builds the binary `claudium-cli-dev` (all experimental features
-enabled), installs it as `claudium`, and creates a `claudium-bypass`
+runtime), builds the binary `cc-lite-cli-dev` (all experimental features
+enabled), installs it as `cc-lite`, and creates a `cc-lite-bypass`
 launcher in `~/.local/bin`.
 
 ### Windows (native)
 
-Claudium builds and runs natively on Windows (no WSL needed). Use the
+CC-lite builds and runs natively on Windows (no WSL needed). Use the
 PowerShell installer, which installs **all dependencies first** (git, Bun,
 and ripgrep -- via winget/choco/scoop), then clones the repo, runs
-`bun install`, and builds a `claudium-cli-dev.exe`:
+`bun install`, and builds a `cc-lite-cli-dev.exe`:
 
 ```powershell
-irm https://raw.githubusercontent.com/Flybicy/claudium/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/Flybicy/CC-lite/main/install.ps1 | iex
 ```
 
 Or, if you already have Bun + ripgrep, build from source as on any other OS
-(see [Build](#build)). **ripgrep (`rg`) must be on your PATH** -- Claudium
+(see [Build](#build)). **ripgrep (`rg`) must be on your PATH** -- CC-lite
 does NOT bundle it; install it with `scoop install ripgrep`,
 `winget install BurntSushi.ripgrep.MSVC`, or `choco install ripgrep`.
 
-> Note: ripgrep is not bundled by Claudium; it's a system dependency on all
+> Note: ripgrep is not bundled by CC-lite; it's a system dependency on all
 > platforms (brew/apt install ripgrep on macOS/Linux).
 
 ---
@@ -185,22 +185,22 @@ curl -fsSL https://bun.sh/install | bash
 
 ```bash
 # Clone the repo
-git clone https://github.com/Flybicy/claudium.git
-cd claudium
+git clone https://github.com/Flybicy/CC-lite.git
+cd cc-lite
 
 # Install dependencies
 bun install
 
-# Standard build -- produces ./claudium-cli
+# Standard build -- produces ./cc-lite-cli
 bun run build
 
 # Dev build -- dev version stamp, experimental GrowthBook key
 bun run build:dev
 
-# Dev build with ALL experimental features enabled -- produces ./claudium-cli-dev
+# Dev build with ALL experimental features enabled -- produces ./cc-lite-cli-dev
 bun run build:dev:full
 
-# Compiled build (alternative output path) -- produces ./dist/claudium-cli
+# Compiled build (alternative output path) -- produces ./dist/cc-lite-cli
 bun run compile
 ```
 
@@ -208,10 +208,10 @@ bun run compile
 
 | Command | Output | Features | Notes |
 |---|---|---|---|
-| `bun run build` | `./claudium-cli` | `VOICE_MODE` only | Production-like binary |
-| `bun run build:dev` | `./claudium-cli-dev` | `VOICE_MODE` only | Dev version stamp |
-| `bun run build:dev:full` | `./claudium-cli-dev` | All 45+ experimental flags | The full unlock build |
-| `bun run compile` | `./dist/claudium-cli` | `VOICE_MODE` only | Alternative output directory |
+| `bun run build` | `./cc-lite-cli` | `VOICE_MODE` only | Production-like binary |
+| `bun run build:dev` | `./cc-lite-cli-dev` | `VOICE_MODE` only | Dev version stamp |
+| `bun run build:dev:full` | `./cc-lite-cli-dev` | All 45+ experimental flags | The full unlock build |
+| `bun run compile` | `./dist/cc-lite-cli` | `VOICE_MODE` only | Alternative output directory |
 
 ### Individual feature flags
 
@@ -231,16 +231,16 @@ bun run ./scripts/build.ts --dev --feature=BRIDGE_MODE
 
 ```bash
 # Run the installed binary
-claudium
+cc-lite
 
 # Run the installed binary in bypass permission mode
-claudium-bypass
+cc-lite-bypass
 
 # Or the built binary
-./claudium-cli
+./cc-lite-cli
 
 # Or the dev binary
-./claudium-cli-dev
+./cc-lite-cli-dev
 
 # Or run from source without compiling (slower startup)
 bun run dev
@@ -248,33 +248,33 @@ bun run dev
 # See [API Configuration](#api-configuration) for API setup.
 ```
 
-`claudium-bypass` is installed by `install.sh`. It exports `IS_SANDBOX=1` and runs the installed `claudium` binary with `--permission-mode bypassPermissions`.
+`cc-lite-bypass` is installed by `install.sh`. It exports `IS_SANDBOX=1` and runs the installed `cc-lite` binary with `--permission-mode bypassPermissions`.
 
 ### Quick test
 
 ```bash
 # One-shot mode
-claudium -p "what files are in this directory?"
+cc-lite -p "what files are in this directory?"
 
 # One-shot mode with bypass permission mode enabled
-claudium-bypass -p "scan this repo and summarize risky scripts"
+cc-lite-bypass -p "scan this repo and summarize risky scripts"
 
 # Interactive REPL (default)
-claudium
+cc-lite
 
 # Interactive REPL (bypassPermissions)
-claudium-bypass
+cc-lite-bypass
 
 # With specific model
-claudium --model claude-sonnet-4-6-20250514
+cc-lite --model claude-sonnet-4-6-20250514
 
 # Set advisor model
-claudium --advisor-model claude-sonnet-4-6-20250514
+cc-lite --advisor-model claude-sonnet-4-6-20250514
 ```
 
 ## Advisor Tool
 
-Claudium includes a built-in **Advisor** tool that runs a stronger reviewer model
+CC-lite includes a built-in **Advisor** tool that runs a stronger reviewer model
 to audit your approach before you commit to implementation. The advisor checks for
 architecture flaws, security issues, edge cases, and correctness.
 
@@ -313,7 +313,7 @@ knows which one ran and never gets silent fallback.
 
 #### Embedding backends
 
-Semantic and hybrid modes need embeddings. Claudium runs them **fully local**
+Semantic and hybrid modes need embeddings. CC-lite runs them **fully local**
 -- no API key, no per-token cost, your conversation text never leaves the
 machine. Two backends, resolved in this priority order:
 
@@ -434,9 +434,9 @@ src/
 
 ## API Configuration
 
-Claudium supports both **Anthropic Messages API** (natively) and **OpenAI-compatible APIs**. The shim can use either Chat Completions or the newer Responses API depending on the provider and model you configure.
+CC-lite supports both **Anthropic Messages API** (natively) and **OpenAI-compatible APIs**. The shim can use either Chat Completions or the newer Responses API depending on the provider and model you configure.
 
-Note: Unlike the upstream Claude Code, Claudium does **not** support OAuth login via claude.ai. All authentication is done via API keys.
+Note: Unlike the upstream Claude Code, CC-lite does **not** support OAuth login via claude.ai. All authentication is done via API keys.
 
 ### Anthropic Messages API
 
@@ -613,13 +613,13 @@ export AZURE_OPENAI_API_VERSION=2024-12-01-preview
 
 ### SearXNG-backed WebSearch
 
-You can route Claudium's built-in `WebSearch` tool through your own SearXNG instance by setting one environment variable:
+You can route CC-lite's built-in `WebSearch` tool through your own SearXNG instance by setting one environment variable:
 
 ```bash
 export CLAUDE_CODE_SEARXNG_BASE_URL=http://localhost:8888/
 ```
 
-When this variable is set, `WebSearch` no longer relies on the provider's server-side web search. Instead, Claudium calls your SearXNG instance directly at:
+When this variable is set, `WebSearch` no longer relies on the provider's server-side web search. Instead, CC-lite calls your SearXNG instance directly at:
 
 ```text
 GET {CLAUDE_CODE_SEARXNG_BASE_URL}/search?q=<query>&format=json
@@ -629,7 +629,7 @@ Notes:
 
 - This only changes the `WebSearch` tool. `WebFetch` still fetches page content directly.
 - `allowed_domains` and `blocked_domains` are still supported, but filtering is applied locally after SearXNG returns results.
-- If `CLAUDE_CODE_SEARXNG_BASE_URL` is unset, Claudium falls back to the default provider behavior.
+- If `CLAUDE_CODE_SEARXNG_BASE_URL` is unset, CC-lite falls back to the default provider behavior.
 
 ---
 

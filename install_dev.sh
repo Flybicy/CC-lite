@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# claudium dev installer — builds from the dev branch, installs as claudium
-# Usage: curl -fsSL https://raw.githubusercontent.com/Flybicy/claudium/main/install_dev.sh | bash
+# cc-lite dev installer — builds from the dev branch, installs as cc-lite
+# Usage: curl -fsSL https://raw.githubusercontent.com/Flybicy/CC-lite/main/install_dev.sh | bash
 
 # Override these two before sourcing the shared install logic
 BRANCH="dev"
-BUILD_DIR="$HOME/.cache/claudium-dev"
+BUILD_DIR="$HOME/.cache/cc-lite-dev"
 
 # Everything below is the same as install.sh, only using $BRANCH / $BUILD_DIR.
 # ---------------------------------------------------------------------------
@@ -20,7 +20,7 @@ BOLD='\033[1m'
 DIM='\033[2m'
 RESET='\033[0m'
 
-REPO="https://github.com/Flybicy/claudium.git"
+REPO="https://github.com/Flybicy/CC-lite.git"
 INSTALL_DIR="$HOME/.local/bin"
 BUN_MIN_VERSION="1.3.11"
 
@@ -146,15 +146,15 @@ install_deps() {
 }
 
 build_binary() {
-  info "Building claudium..."
+  info "Building cc-lite..."
   cd "$BUILD_DIR" || fail "Cannot enter $BUILD_DIR"
-  bun run build:dev:claudium
-  local binary="$BUILD_DIR/claudium-cli-dev"
+  bun run build:dev:cc-lite
+  local binary="$BUILD_DIR/cc-lite-cli-dev"
   ok "Binary built: $binary"
 }
 
 install_bypass_launcher() {
-  local launcher="$INSTALL_DIR/claudium-bypass"
+  local launcher="$INSTALL_DIR/cc-lite-bypass"
 
   cat > "$launcher" <<'EOF'
 #!/usr/bin/env bash
@@ -162,7 +162,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export IS_SANDBOX=1
-exec "$SCRIPT_DIR/claudium" --permission-mode bypassPermissions "$@"
+exec "$SCRIPT_DIR/cc-lite" --permission-mode bypassPermissions "$@"
 EOF
 
   chmod +x "$launcher"
@@ -172,9 +172,9 @@ EOF
 install_binary() {
   mkdir -p "$INSTALL_DIR"
 
-  cp "$BUILD_DIR/claudium-cli-dev" "$INSTALL_DIR/claudium"
-  chmod +x "$INSTALL_DIR/claudium"
-  ok "Installed: $INSTALL_DIR/claudium"
+  cp "$BUILD_DIR/cc-lite-cli-dev" "$INSTALL_DIR/cc-lite"
+  chmod +x "$INSTALL_DIR/cc-lite"
+  ok "Installed: $INSTALL_DIR/cc-lite"
 
   install_bypass_launcher
 
@@ -213,9 +213,9 @@ echo ""
 printf "${GREEN}${BOLD}  Installation complete!${RESET}\n"
 echo ""
 printf "  ${BOLD}Run it:${RESET}\n"
-printf "    ${CYAN}claudium${RESET}                           # interactive REPL\n"
-printf "    ${CYAN}claudium-bypass${RESET}                    # interactive REPL with bypassPermissions\n"
-printf "    ${CYAN}claudium -p \"your prompt\"${RESET}          # one-shot mode\n"
+printf "    ${CYAN}cc-lite${RESET}                           # interactive REPL\n"
+printf "    ${CYAN}cc-lite-bypass${RESET}                    # interactive REPL with bypassPermissions\n"
+printf "    ${CYAN}cc-lite -p \"your prompt\"${RESET}          # one-shot mode\n"
 echo ""
 printf "  ${BOLD}Set your API key:${RESET}\n"
 printf "    ${CYAN}export ANTHROPIC_API_KEY=\"sk-ant-...\"${RESET}\n"

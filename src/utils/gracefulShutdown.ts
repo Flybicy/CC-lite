@@ -191,7 +191,7 @@ function printResumeHint(): void {
       if (
         writeExitFooter(
           chalk.dim(
-            `Resume this session with:\nclaudium --resume ${resumeArg}\n`,
+            `Resume this session with:\ncc-lite --resume ${resumeArg}\n`,
           ),
         )
       ) {

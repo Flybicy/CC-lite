@@ -1,4 +1,4 @@
-# Claudium
+# CC-lite
 
 > **简体中文** · [English](README.md)
 
@@ -37,12 +37,12 @@ Anthropic 会向每条对话注入系统级指令（硬编码拒答模式、"网
 
 **macOS / Linux / Windows Git Bash：**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Flybicy/claudium/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Flybicy/CC-lite/main/install.sh | bash
 ```
 
 **Windows（原生，PowerShell）：**
 ```powershell
-irm https://raw.githubusercontent.com/Flybicy/claudium/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/Flybicy/CC-lite/main/install.ps1 | iex
 ```
 
 安装脚本会**先自动装齐所有依赖，再拉源码构建**：
@@ -51,7 +51,7 @@ irm https://raw.githubusercontent.com/Flybicy/claudium/main/install.ps1 | iex
    Windows: winget/scoop/choco，Git Bash 下还可直接下载官方 rg 压缩包）
 2. 克隆源码 → `bun install`（含 `@huggingface/transformers` 本地语义模型运行时）
    → 编译单文件可执行程序
-3. 安装为 `claudium`（及 `claudium-bypass`）到 `~/.local/bin`，自动尝试加入 PATH
+3. 安装为 `cc-lite`（及 `cc-lite-bypass`）到 `~/.local/bin`，自动尝试加入 PATH
 
 > 已装好 Bun + ripgrep 也可直接源码构建，见下文[构建](#构建)。
 
@@ -68,14 +68,14 @@ irm https://raw.githubusercontent.com/Flybicy/claudium/main/install.ps1 | iex
 ## 构建
 
 ```bash
-git clone https://github.com/Flybicy/claudium.git
-cd claudium
+git clone https://github.com/Flybicy/CC-lite.git
+cd cc-lite
 bun install
 
-bun run build            # 生产二进制 ./claudium-cli（仅 VOICE_MODE）
-bun run build:dev        # 开发版 ./claudium-cli-dev
-bun run build:dev:full   # 解锁全部实验性功能 ./claudium-cli-dev
-bun run compile          # 输出到 ./dist/claudium-cli
+bun run build            # 生产二进制 ./cc-lite-cli（仅 VOICE_MODE）
+bun run build:dev        # 开发版 ./cc-lite-cli-dev
+bun run build:dev:full   # 解锁全部实验性功能 ./cc-lite-cli-dev
+bun run compile          # 输出到 ./dist/cc-lite-cli
 ```
 
 按需单独开启某个开关：
@@ -88,17 +88,17 @@ bun run ./scripts/build.ts --feature=ULTRAPLAN --feature=ULTRATHINK
 ## 运行
 
 ```bash
-claudium                # 已安装版本（交互式 REPL，默认）
-claudium-bypass         # 以 bypassPermissions 权限模式运行
-./claudium-cli          # 或直接用构建产物
+cc-lite                # 已安装版本（交互式 REPL，默认）
+cc-lite-bypass         # 以 bypassPermissions 权限模式运行
+./cc-lite-cli          # 或直接用构建产物
 bun run dev             # 或从源码运行（启动较慢）
 ```
 
 快速测试：
 ```bash
-claudium -p "what files are in this directory?"
-claudium -p "scan this repo and summarize risky scripts"   # bypass 权限模式
-claudium --model claude-sonnet-4-6-20250514                # 指定模型
+cc-lite -p "what files are in this directory?"
+cc-lite -p "scan this repo and summarize risky scripts"   # bypass 权限模式
+cc-lite --model claude-sonnet-4-6-20250514                # 指定模型
 ```
 
 ---
@@ -217,7 +217,7 @@ src/voice/                # 语音输入
 
 ## API 配置
 
-Claudium 同时支持 **Anthropic Messages API**（原生）与 **OpenAI 兼容 API**（适配层可用
+CC-lite 同时支持 **Anthropic Messages API**（原生）与 **OpenAI 兼容 API**（适配层可用
 Chat Completions 或新版 Responses API）。与上游不同：**不支持** claude.ai OAuth 登录，
 全部通过 API Key 认证。
 

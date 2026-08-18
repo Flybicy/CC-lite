@@ -1,20 +1,20 @@
 #requires -Version 5.1
 <#
 .SYNOPSIS
-  Claudium installer for Windows (PowerShell).
+  CC-lite installer for Windows (PowerShell).
 .DESCRIPTION
   Checks for Bun and ripgrep, installs them if needed (via winget/choco/scoop/npm),
-  clones the repository, builds a claudium-cli-dev.exe, and installs it as
-  claudium.exe under a directory on PATH.
+  clones the repository, builds a cc-lite-cli-dev.exe, and installs it as
+  cc-lite.exe under a directory on PATH.
 .NOTES
   Usage (run from an elevated or normal PowerShell 5.1+ / PowerShell 7+ window):
-    irm https://raw.githubusercontent.com/Flybicy/claudium/main/install.ps1 | iex
+    irm https://raw.githubusercontent.com/Flybicy/CC-lite/main/install.ps1 | iex
   Or save and run:
     ./install.ps1 [-InstallDir <path>] [-Repo <url>] [-SkipBuild]
 #>
 [CmdletBinding()]
 param(
-  [string]$Repo      = "https://github.com/Flybicy/claudium.git",
+  [string]$Repo      = "https://github.com/Flybicy/CC-lite.git",
   [string]$InstallDir,
   [string]$BuildDir,
   [switch]$SkipBuild,
@@ -26,7 +26,7 @@ $ProgressPreference     = "SilentlyContinue"  # speed up Invoke-WebRequest
 
 # --- install dir ---
 if (-not $InstallDir) { $InstallDir = Join-Path $env:USERPROFILE ".local\bin" }
-if (-not $BuildDir)   { $BuildDir   = Join-Path $env:LOCALAPPDATA "claudium-build" }
+if (-not $BuildDir)   { $BuildDir   = Join-Path $env:LOCALAPPDATA "cc-lite-build" }
 
 # --- helpers ---
 function Write-Info  { param([string]$m) Write-Host "[*] $m" -ForegroundColor Cyan }
@@ -174,7 +174,7 @@ function Ensure-Ripgrep {
     Write-Ok "rg: $(rg --version | Select-Object -First 1)"
     return
   }
-  Write-Warn "ripgrep (rg) not found. Claudium does NOT bundle it. Installing..."
+  Write-Warn "ripgrep (rg) not found. CC-lite does NOT bundle it. Installing..."
   if (Test-Command winget) {
     winget install --id BurntSushi.ripgrep.MSVC --silent --accept-package-agreements --accept-source-agreements 2>$null
   }
@@ -222,18 +222,18 @@ function Install-Deps {
 }
 
 function Build-Binary {
-  Write-Info "Building claudium..."
+  Write-Info "Building cc-lite..."
   Push-Location $BuildDir
   try {
     bun run build:dev:full
     if ($LASTEXITCODE -ne 0) {
-      Write-Warn "build:dev:full failed, trying build:dev:claudium..."
-      bun run build:dev:claudium
+      Write-Warn "build:dev:full failed, trying build:dev:cc-lite..."
+      bun run build:dev:cc-lite
     }
     # locate the built binary (.exe on Windows)
-    $bin = Join-Path $BuildDir "claudium-cli-dev.exe"
-    if (-not (Test-Path $bin)) { $bin = Join-Path $BuildDir "claudium-cli-dev" }
-    if (-not (Test-Path $bin)) { Write-Fail "Build did not produce claudium-cli-dev(.exe)." }
+    $bin = Join-Path $BuildDir "cc-lite-cli-dev.exe"
+    if (-not (Test-Path $bin)) { $bin = Join-Path $BuildDir "cc-lite-cli-dev" }
+    if (-not (Test-Path $bin)) { Write-Fail "Build did not produce cc-lite-cli-dev(.exe)." }
     Write-Ok "Binary built: $bin"
     return $bin
   } finally { Pop-Location }
@@ -241,7 +241,7 @@ function Build-Binary {
 
 function Install-Binary([string]$Binary) {
   New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-  $dest = Join-Path $InstallDir "claudium.exe"
+  $dest = Join-Path $InstallDir "cc-lite.exe"
   Copy-Item -Path $Binary -Destination $dest -Force
   Write-Ok "Installed: $dest"
 
@@ -286,8 +286,8 @@ function Main {
   Write-Host "  Installation complete!" -ForegroundColor Green
   Write-Host ""
   Write-Host "  Run it:" -ForegroundColor White
-  Write-Host "    claudium                       # interactive REPL"
-  Write-Host "    claudium -p `"your prompt`"            # one-shot mode"
+  Write-Host "    cc-lite                       # interactive REPL"
+  Write-Host "    cc-lite -p `"your prompt`"            # one-shot mode"
   Write-Host ""
   Write-Host "  Set your Anthropic Messages API key:" -ForegroundColor White
   Write-Host "    `$env:ANTHROPIC_API_KEY = `"sk-ant-...`""

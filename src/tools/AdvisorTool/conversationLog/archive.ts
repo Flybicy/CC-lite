@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------------------
 // Per-project conversation archive (advisor long-term memory).
 //
-// Claudium persists the advisor's conversation-log entries to a per-project
+// CC-lite persists the advisor's conversation-log entries to a per-project
 // JSONL archive so that, after a restart or in a brand-new session in the same
 // project directory, the advisor can still search/read what was discussed
 // before instead of starting from a blank slate.

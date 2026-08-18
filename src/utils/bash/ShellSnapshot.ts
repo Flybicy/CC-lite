@@ -250,7 +250,7 @@ function getUserSnapshotContent(configFile: string): string {
 }
 
 /**
- * Generates Claudium specific snapshot content
+ * Generates CC-lite specific snapshot content
  * This content is always included regardless of user configuration
  */
 async function getClaudeCodeSnapshotContent(): Promise<string> {
@@ -337,7 +337,7 @@ async function getSnapshotScript(
   const configFile = getConfigFile(shellPath)
   const isZsh = configFile.endsWith('.zshrc')
 
-  // Generate the user content and Claudium content
+  // Generate the user content and CC-lite content
   const userContent = configFileExists
     ? getUserSnapshotContent(configFile)
     : !isZsh
@@ -416,7 +416,7 @@ export const createAndSaveSnapshot = async (
 
       if (!configFileExists) {
         logForDebugging(
-          `Shell config file not found: ${configFile}, creating snapshot with Claudium defaults only`,
+          `Shell config file not found: ${configFile}, creating snapshot with CC-lite defaults only`,
         )
       }
 

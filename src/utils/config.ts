@@ -369,7 +369,7 @@ export type GlobalConfig = {
   showSpinnerTree?: boolean // Whether to show the teammate spinner tree instead of pills
 
   // First start time tracking
-  firstStartTime?: string // ISO timestamp when Claudium was first started on this machine
+  firstStartTime?: string // ISO timestamp when CC-lite was first started on this machine
 
   messageIdleNotifThresholdMs: number // How long the user has to have been idle to get a notification that Claude is done generating
 
@@ -392,8 +392,8 @@ export type GlobalConfig = {
   inputNeededNotifEnabled?: boolean
   agentPushNotifEnabled?: boolean
 
-  // Claudium usage tracking
-  claudeCodeFirstTokenDate?: string // ISO timestamp of the user's first Claudium OAuth token
+  // CC-lite usage tracking
+  claudeCodeFirstTokenDate?: string // ISO timestamp of the user's first CC-lite OAuth token
 
   // Model switch callout tracking (ant-only)
   modelSwitchCalloutDismissed?: boolean // Whether user chose "Don't show again"
@@ -506,7 +506,7 @@ export type GlobalConfig = {
   lspRecommendationNeverPlugins?: string[] // Plugin IDs to never suggest
   lspRecommendationIgnoredCount?: number // Track ignored recommendations (stops after 5)
 
-  // Claudium hint protocol state (<claude-code-hint /> tags from CLIs/SDKs).
+  // CC-lite hint protocol state (<claude-code-hint /> tags from CLIs/SDKs).
   // Nested by hint type so future types (docs, mcp, ...) slot in without new
   // top-level keys.
   claudeCodeHints?: {

@@ -4,7 +4,7 @@
  */
 
 /**
- * A session ID uniquely identifies a Claudium session.
+ * A session ID uniquely identifies a CC-lite session.
  * Returned by getSessionId().
  */
 export type SessionId = string & { readonly __brand: 'SessionId' }

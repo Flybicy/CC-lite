@@ -387,7 +387,7 @@ async function handleSpawnSplitPane(
     await enablePaneBorderStatus()
   }
 
-  // Build the command to spawn Claudium with teammate identity
+  // Build the command to spawn CC-lite with teammate identity
   // Note: We spawn without a prompt - initial instructions are sent via mailbox
   const binaryPath = getTeammateCommand()
 
@@ -594,7 +594,7 @@ async function handleSpawnSeparateWindow(
 
   const paneId = createWindowResult.stdout.trim()
 
-  // Build the command to spawn Claudium with teammate identity
+  // Build the command to spawn CC-lite with teammate identity
   // Note: We spawn without a prompt - initial instructions are sent via mailbox
   const binaryPath = getTeammateCommand()
 
@@ -1023,7 +1023,7 @@ async function handleSpawnInProcess(
 }
 
 /**
- * Handle spawn operation - creates a new Claudium instance.
+ * Handle spawn operation - creates a new CC-lite instance.
  * Uses in-process mode when enabled, otherwise uses tmux/iTerm2 split-pane view.
  * Falls back to in-process if pane backend detection fails (e.g., iTerm2 without
  * it2 CLI or tmux installed).

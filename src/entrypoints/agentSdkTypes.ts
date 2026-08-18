@@ -1,5 +1,5 @@
 /**
- * Main entrypoint for Claudium Agent SDK types.
+ * Main entrypoint for CC-lite Agent SDK types.
  *
  * This file re-exports the public SDK API from:
  * - sdk/coreTypes.ts - Common serializable types (messages, configs)
