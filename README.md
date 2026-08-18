@@ -20,10 +20,6 @@ curl -fsSL https://raw.githubusercontent.com/Flybicy/CC-lite/main/install_dev.sh
 
 > Installs from the `dev` branch as `cc-lite` (and `cc-lite-bypass`). Same binary names as the stable installer — only the source branch differs.
 
-<p align="center">
-  <img src="assets/screenshot.png" alt="cc-lite screenshot" width="800" />
-</p>
-
 ---
 
 ## What is this
