@@ -15,6 +15,7 @@ import {
   EmbeddingError,
   resolveEmbeddingBackend,
 } from './embeddings.js'
+import { ARCHIVE_ID_BASE } from './archive.js'
 import {
   buildEntryEmbeddingText,
   hasEmbeddingText,
@@ -54,7 +55,8 @@ function formatConversationIndex(
     const label = formatEntryLabel(e)
     const toolInfo = e.tools ? ` [tools: ${e.tools.join(', ').slice(0, 200)}]` : ''
     const trunc = e.truncated ? ' (truncated)' : ''
-    msgLines.push(`[${e.id}] ${label} (${e.charLength} chars)${toolInfo}${trunc}`)
+    const prior = e.id >= ARCHIVE_ID_BASE ? ' (prior session)' : ''
+    msgLines.push(`[${e.id}] ${label} (${e.charLength} chars)${toolInfo}${trunc}${prior}`)
   }
 
   // Build complete output, then trim from end if over budget.
@@ -74,6 +76,9 @@ function formatConversationIndex(
 
     const parts: string[] = [header]
     if (newerLine) parts.push(newerLine)
+    if (page.some(e => e.id >= ARCHIVE_ID_BASE)) {
+      parts.push(`§ ids >= ${ARCHIVE_ID_BASE} are prior project context restored from a previous session.`)
+    }
     for (let i = 0; i < shown; i++) parts.push(msgLines[i]!)
     if (shown < msgLines.length) parts.push('[...index truncated]')
     if (hasMorePages) {
@@ -107,6 +112,13 @@ export interface ConversationLogToolOptions {
    * approximate fallback). Injectable for tests.
    */
   embedBackend?: EmbeddingBackend
+  /**
+   * Prior-project conversation entries restored from the per-project archive
+   * (advisor long-term memory). Merged in front of the live entries with
+   * ids >= ARCHIVE_ID_BASE so the advisor can search/read what was discussed
+   * before the current session. Empty by default (tests unaffected).
+   */
+  archivedEntries?: ConversationEntry[]
 }
 
 function createConversationLogTool(
@@ -114,8 +126,16 @@ function createConversationLogTool(
   prebuiltIndex?: SearchIndex,
   options?: ConversationLogToolOptions,
 ) {
-  const entryMap = new Map(entries.map(e => [e.id, e]))
-  const searchIndex = prebuiltIndex ?? buildSearchIndex(entries)
+  // Prior-project context (older) is merged BEFORE live entries. Archived
+  // entries carry ids >= ARCHIVE_ID_BASE so they never collide with the live
+  // 0..N-1 ids and stay addressable through the existing schema. When no
+  // archive is supplied the merged array is identical to the live entries and
+  // behavior is unchanged.
+  const archived = options?.archivedEntries ?? []
+  const hasArchive = archived.length > 0
+  const entries_ = hasArchive ? [...archived, ...entries] : entries
+  const entryMap = new Map(entries_.map(e => [e.id, e]))
+  const searchIndex = (prebuiltIndex && !hasArchive) ? prebuiltIndex : buildSearchIndex(entries_)
   // Track which unique IDs were successfully read (for conversationsRead stats)
   const uniqueReadIds = new Set<number>()
 
@@ -141,7 +161,7 @@ function createConversationLogTool(
     const cached = vectorCache.get(backend.label)
     if (cached) return cached
     const promise = (async () => {
-      const texts = entries.map(entry =>
+      const texts = entries_.map(entry =>
         hasEmbeddingText(entry) ? buildEntryEmbeddingText(entry) : '',
       )
       return backend.embed(texts, { signal })
@@ -224,7 +244,7 @@ function createConversationLogTool(
       throw new EmbeddingError(`Failed to embed the search query: ${detail}`)
     }
 
-    const semanticRank = semanticSearch(queryVector, vectors, entries, filter)
+    const semanticRank = semanticSearch(queryVector, vectors, entries_, filter)
 
     if (input.mode === 'semantic') {
       const top = semanticRank.results.slice(0, input.top_k).map(s => ({
@@ -379,7 +399,7 @@ function createConversationLogTool(
 
     async call(input: ConversationLogInput, context?: { abortController?: { signal?: AbortSignal } }) {
       if (input.action === 'index') {
-        return { data: formatConversationIndex(entries, input.offset, input.limit) }
+        return { data: formatConversationIndex(entries_, input.offset, input.limit) }
       }
       if (input.action === 'search') {
         if ((input.mode ?? 'keyword') !== 'keyword') {
@@ -414,7 +434,7 @@ function createConversationLogTool(
         const target = input.message_id
         const before = input.before ?? 3
         const after = input.after ?? 3
-        const allIds = entries.map(e => e.id).sort((a, b) => a - b)
+        const allIds = entries_.map(e => e.id).sort((a, b) => a - b)
         const idx = allIds.indexOf(target)
         if (idx === -1) {
           return { data: `Message [${target}] not found in conversation log.` }

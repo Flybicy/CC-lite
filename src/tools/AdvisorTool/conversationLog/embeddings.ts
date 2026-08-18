@@ -48,10 +48,23 @@ export class EmbeddingError extends Error {
 // Configuration
 // ---------------------------------------------------------------------------
 
+/**
+ * Wire protocol spoken by the remote embedding endpoint.
+ *  - 'openai': OpenAI-compatible `POST {baseUrl}/embeddings` with
+ *    `{model, input}` -> `{data: [{embedding, index}]}` (OpenAI, Azure-style
+ *    gateways, SiliconFlow, OpenRouter, vLLM, Ollama's /v1, ...).
+ *  - 'ollama': Ollama native `POST {baseUrl}/embed` with
+ *    `{model, input}` -> `{embeddings: [[...]]}`.
+ *  - 'auto' (default): pick 'ollama' when the base URL looks like an Ollama
+ *    server (path ends in /api or port 11434), otherwise 'openai'.
+ */
+export type EmbeddingProtocol = 'openai' | 'ollama' | 'auto'
+
 export interface EmbeddingConfig {
   model: string
   baseUrl: string
   apiKey: string
+  protocol?: EmbeddingProtocol
 }
 
 function env(...names: string[]): string | undefined {
@@ -81,7 +94,30 @@ export function resolveEmbeddingConfig(): EmbeddingConfig | null {
     'OPENAI_API_KEY',
     'CLAUDE_CODE_EMBEDDING_API_TOKEN',
   ) ?? ''
-  return { model, baseUrl: normalizeBaseUrl(baseUrl), apiKey }
+  const rawProtocol = env(
+    'CLAUDE_CODE_ADVISOR_EMBEDDING_PROTOCOL',
+    'CLAUDE_CODE_EMBEDDING_PROTOCOL',
+  )?.toLowerCase()
+  const protocol: EmbeddingProtocol =
+    rawProtocol === 'openai' || rawProtocol === 'ollama' ? rawProtocol : 'auto'
+  return { model, baseUrl: normalizeBaseUrl(baseUrl), apiKey, protocol }
+}
+
+/**
+ * Resolve the effective wire protocol for a config. 'auto' detects Ollama by
+ * URL shape (a base path ending in /api, or the default Ollama port 11434);
+ * everything else uses the OpenAI-compatible protocol.
+ */
+export function resolveEffectiveProtocol(cfg: EmbeddingConfig): 'openai' | 'ollama' {
+  if (cfg.protocol === 'openai' || cfg.protocol === 'ollama') return cfg.protocol
+  try {
+    const url = new URL(cfg.baseUrl)
+    if (url.pathname.replace(/\/+$/, '').endsWith('/api')) return 'ollama'
+    if (url.port === '11434') return 'ollama'
+  } catch {
+    // fall through to openai
+  }
+  return 'openai'
 }
 
 /** Explicit opt-out of semantic search modes entirely. */
@@ -305,6 +341,13 @@ function isRetryableStatus(status: number): boolean {
   return status === 408 || status === 429 || status >= 500
 }
 
+function ollamaEmbedUrl(baseUrl: string): string {
+  const trimmed = baseUrl.replace(/\/+$/, '')
+  // Base URL already points at the Ollama API root ("http://host:11434/api")
+  // -> append /embed; otherwise append the full /api/embed path.
+  return trimmed.endsWith('/api') ? `${trimmed}/embed` : `${trimmed}/api/embed`
+}
+
 async function fetchEmbeddingsOnce(
   cfg: EmbeddingConfig,
   batch: string[],
@@ -314,8 +357,10 @@ async function fetchEmbeddingsOnce(
     'content-type': 'application/json',
   }
   if (cfg.apiKey) headers.authorization = `Bearer ${cfg.apiKey}`
+  const protocol = resolveEffectiveProtocol(cfg)
+  const url = protocol === 'ollama' ? ollamaEmbedUrl(cfg.baseUrl) : `${cfg.baseUrl}/embeddings`
   const response = await fetchWithTimeout(
-    `${cfg.baseUrl}/embeddings`,
+    url,
     {
       method: 'POST',
       headers,
@@ -330,6 +375,24 @@ async function fetchEmbeddingsOnce(
       `Embedding endpoint returned ${response.status}: ${body.slice(0, 300)}`,
       response.status,
     )
+  }
+  if (protocol === 'ollama') {
+    // Ollama native: { embeddings: number[][], model?, ... }
+    const json = (await response.json()) as { embeddings?: unknown; error?: unknown }
+    if (json.error) {
+      throw new EmbeddingError(`Embedding endpoint error: ${String(json.error).slice(0, 300)}`)
+    }
+    if (!Array.isArray(json.embeddings) || json.embeddings.length !== batch.length) {
+      throw new EmbeddingError(
+        `Embedding endpoint returned ${Array.isArray(json.embeddings) ? json.embeddings.length : 0} vectors for ${batch.length} inputs`,
+      )
+    }
+    return json.embeddings.map(item => {
+      if (!Array.isArray(item)) {
+        throw new EmbeddingError('Embedding endpoint returned a non-array vector')
+      }
+      return item as number[]
+    })
   }
   const json = (await response.json()) as {
     data?: Array<{ embedding?: unknown; index?: unknown }>
@@ -514,14 +577,178 @@ export function createLocalEmbeddingBackend(): EmbeddingBackend {
   }
 }
 
+
+// ---------------------------------------------------------------------------
+// Local SEMANTIC backend (Transformers.js in-process ONNX embedding model)
+// ---------------------------------------------------------------------------
+//
+// Runs a real ONNX embedding model in-process via @huggingface/transformers
+// (Transformers.js v3, onnxruntime WASM). No server, no API key, no per-token
+// cost: true local semantics with a one-time model download cached on disk.
+//
+// Graceful degradation: import and pipeline load both throw EmbeddingError on
+// failure, which the search layer already handles (hybrid degrades to
+// keyword-only, pure-semantic reports a clean error). Also covers the
+// compiled-binary case, where the package is typically NOT embedded into the
+// exe so the dynamic import fails cleanly. For true local semantics inside a
+// compiled binary, point a local Ollama / LM Studio at the *remote* backend
+// via CLAUDE_CODE_ADVISOR_EMBEDDING_BASE_URL=http://localhost:11434/v1.
+
+/** Default local ONNX embedding model (small, fast, cross-lingual-ish). */
+export const LOCAL_TRANSFORMERS_DEFAULT_MODEL = 'Xenova/all-MiniLM-L6-v2'
+
+function transformersCacheModel(model: string): string {
+  return 'local-semantic:' + model
+}
+
+export interface TransformersBackendOptions {
+  pipelineFactory?: () => Promise<TransformersPipeline>
+}
+
+export interface TransformersPipeline {
+  run(texts: string[], opts: { pooling?: 'mean'; normalize?: boolean }): Promise<Float32Array>
+}
+
+let _transformersPipeline: Promise<TransformersPipeline> | null = null
+let _transformersModelName: string | null = null
+
+export function resetTransformersPipelineForTests(): void {
+  _transformersPipeline = null
+  _transformersModelName = null
+}
+
+async function defaultPipelineFactory(model: string): Promise<TransformersPipeline> {
+  // Variable indirection so `bun build --compile` leaves this as a runtime
+  // dynamic import instead of trying to bundle a missing optional package.
+  const pkg = ['@huggingface', 'transformers'].join('/')
+  const mod: any = await import(pkg)
+  const modEnv = mod.env
+  try {
+    modEnv.cacheDir = join(getCacheDir(), 'transformers-models')
+    mkdirSync(modEnv.cacheDir, { recursive: true })
+  } catch { /* fall back to transformers default cache */ }
+  try {
+    modEnv.backends ??= {}
+    modEnv.backends.onnx ??= {}
+    modEnv.backends.onnx.wasm ??= {}
+  } catch { /* env shape may vary by version; non-fatal */ }
+  const extractor = await mod.pipeline('feature-extraction', model, {
+    progress_callback: () => {},
+  })
+  return {
+    async run(texts, opts) {
+      const out = await extractor(texts, {
+        pooling: opts.pooling ?? 'mean',
+        normalize: opts.normalize ?? true,
+      })
+      const data = (out as any)?.data
+      if (data instanceof Float32Array) return data
+      if (Array.isArray(data) || ArrayBuffer.isView(data)) {
+        return new Float32Array(data as any)
+      }
+      throw new EmbeddingError('Transformers.js pipeline returned an unexpected tensor shape')
+    },
+  }
+}
+
+export function createTransformersLocalBackend(
+  model: string = LOCAL_TRANSFORMERS_DEFAULT_MODEL,
+  opts?: TransformersBackendOptions,
+): EmbeddingBackend {
+  const cacheModel = transformersCacheModel(model)
+  return {
+    kind: 'local',
+    label: 'local-semantic:' + model,
+    semantic: true,
+    async embed(texts, callOpts) {
+      if (texts.length === 0) return []
+      await loadDiskCache(cacheModel)
+      const results: EmbeddingVector[] = new Array(texts.length)
+      const misses: Array<{ index: number; text: string; key: string }> = []
+      for (let i = 0; i < texts.length; i++) {
+        const text = texts[i]!
+        if (!text.trim()) { results[i] = new Float32Array(0); continue }
+        const key = embeddingCacheKey(cacheModel, text)
+        const cached = memoryCache.get(key)
+        if (cached) results[i] = cached
+        else misses.push({ index: i, text, key })
+      }
+      if (misses.length === 0) return results
+
+      if (!_transformersPipeline || _transformersModelName !== model) {
+        _transformersModelName = model
+        _transformersPipeline = (async () =>
+          opts?.pipelineFactory ? opts.pipelineFactory() : defaultPipelineFactory(model))()
+      }
+      let pipeline: TransformersPipeline
+      try {
+        pipeline = await _transformersPipeline
+      } catch (err) {
+        _transformersPipeline = null
+        _transformersModelName = null
+        throw new EmbeddingError(
+          'Could not load the local embedding model "' + model + '". ' +
+          'Install it with `bun add @huggingface/transformers` (run-from-source) ' +
+          'or use a local Ollama/LM Studio via CLAUDE_CODE_ADVISOR_EMBEDDING_BASE_URL ' +
+          'for the compiled binary. Detail: ' +
+          (err instanceof Error ? err.message : String(err)).slice(0, 200),
+        )
+      }
+
+      const newEntries: Array<[string, EmbeddingVector]> = []
+      for (const batch of chunkBatches(misses.map(m => m.text))) {
+        let flat: Float32Array
+        try {
+          flat = await pipeline.run(batch, { pooling: 'mean', normalize: true })
+        } catch (err) {
+          _transformersPipeline = null
+          _transformersModelName = null
+          throw new EmbeddingError(
+            'Local model "' + model + '" inference failed: ' +
+            (err instanceof Error ? err.message : String(err)).slice(0, 200),
+          )
+        }
+        const dim = Math.floor(flat.length / batch.length)
+        if (dim <= 0 || flat.length % batch.length !== 0) {
+          throw new EmbeddingError('Local model "' + model + '" returned an unexpected embedding length')
+        }
+        for (let i = 0; i < batch.length; i++) {
+          const vec = l2Normalize(toEmbeddingVector(Array.from(flat.slice(i * dim, (i + 1) * dim))))
+          const miss = misses[newEntries.length]!
+          results[miss.index] = vec
+          newEntries.push([miss.key, vec])
+        }
+      }
+      for (const [key, vector] of newEntries) memoryCache.set(key, vector)
+      appendDiskCache(cacheModel, newEntries)
+      return results
+    },
+  }
+}
+
+/** Resolve the local Transformers.js model name when opted in, else null. */
+export function resolveLocalTransformersModel(): string | null {
+  const explicit = env('CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING_MODEL')
+  if (explicit) return explicit
+  const flag = env('CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING')
+  if (flag === '1' || flag === 'true' || flag === 'on') {
+    return LOCAL_TRANSFORMERS_DEFAULT_MODEL
+  }
+  return null
+}
+
 /**
- * Resolve the active embedding backend from the environment:
- * remote when a model is configured, otherwise the local approximate
- * fallback. Returns null only when semantic search is explicitly disabled.
+ * Resolve the active embedding backend from the environment, in priority
+ * order: explicit disable -> remote endpoint -> in-process Transformers.js
+ * local-semantic model -> local approximate fallback. Returns null only when
+ * semantic search is explicitly disabled.
  */
 export function resolveEmbeddingBackend(): EmbeddingBackend | null {
   if (isSemanticSearchDisabled()) return null
   const cfg = resolveEmbeddingConfig()
   if (cfg) return createRemoteEmbeddingBackend(cfg)
+  const localModel = resolveLocalTransformersModel()
+  if (localModel) return createTransformersLocalBackend(localModel)
   return createLocalEmbeddingBackend()
 }
+

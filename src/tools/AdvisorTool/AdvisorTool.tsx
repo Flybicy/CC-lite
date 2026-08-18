@@ -39,6 +39,7 @@ import {
 import type { AdvisorRunResult } from './types.js'
 import { getConversationSnapshot } from './conversationLog/snapshot.js'
 import { createConversationLogTool } from './conversationLog/ConversationLogTool.js'
+import { loadProjectMemory, persistProjectMemory } from './conversationLog/archive.js'
 import { buildAdvisorBlocks, summarizeAdvisorMessages } from './runtimeSummary.js'
 import { validateAdvisorBashInput } from './toolPolicy.js'
 
@@ -214,9 +215,19 @@ async function runAdvisorQuery(
     ADVISOR_SYSTEM_PROMPT,
   ])
 
-  // Build conversation log snapshot + lazy-read tool
+  // Build conversation log snapshot + lazy-read tool.
+  // Project memory: persist the current snapshot (deduped by content
+  // fingerprint) so prior sessions are never lost across restarts, and load
+  // the archive so the advisor can search/read earlier context (ids >=
+  // ARCHIVE_ID_BASE). Both are best-effort and never throw.
   const { entries: conversationEntries, index: conversationIndex } = getConversationSnapshot(history.messages)
-  const conversationLog = createConversationLogTool(conversationEntries, conversationIndex)
+  await persistProjectMemory(conversationEntries)
+  const archivedEntries = await loadProjectMemory()
+  const conversationLog = createConversationLogTool(
+    conversationEntries,
+    conversationIndex,
+    archivedEntries.length > 0 ? { archivedEntries } : undefined,
+  )
 
   // Build identity-based allowlist from the current tool set.
   // Identity check first (canonical singletons), then name-based fallback

@@ -47,7 +47,7 @@ export type SideQueryOptions = {
   output_format?: BetaJSONOutputFormat
   /** Max tokens (default: 1024) */
   max_tokens?: number
-  /** Max retries (default: 2) */
+  /** Max retries (default: 5) */
   maxRetries?: number
   /** Abort signal */
   signal?: AbortSignal
@@ -113,7 +113,7 @@ export async function sideQuery(opts: SideQueryOptions): Promise<BetaMessage> {
     tool_choice,
     output_format,
     max_tokens = 1024,
-    maxRetries = 2,
+    maxRetries = 5,
     signal,
     skipSystemPromptPrefix,
     temperature,

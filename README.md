@@ -303,21 +303,40 @@ knows which one ran and never gets silent fallback.
 
 #### Embedding backends
 
-Semantic and hybrid modes need embeddings. There are two backends:
+Semantic and hybrid modes need embeddings. There are three backends,
+resolved in this priority order:
 
-1. **remote** (true semantics) -- any OpenAI-compatible `/embeddings`
-   endpoint: OpenAI, SiliconFlow, Jina, Ollama `/v1`, LM Studio, vLLM, ...
+1. **remote** (true semantics) -- speaks **both mainstream embedding
+   protocols** with auto-detection:
+   - *OpenAI-compatible* `POST {base}/embeddings` (OpenAI, SiliconFlow,
+     Jina, OpenRouter, vLLM, LM Studio, Ollama's `/v1`, ...), and
+   - *Ollama native* `POST /api/embed` (auto-detected when the base URL ends
+     in `/api` or uses port 11434; force with
+     `CLAUDE_CODE_ADVISOR_EMBEDDING_PROTOCOL=ollama`).
    Configured via env vars, with **persistent on-disk caching** so unchanged
-   messages are never re-embedded (JSONL per model).
-2. **local** (approximate fallback) -- a deterministic, offline, free,
+   messages are never re-embedded (JSONL per model, survives restarts).
+2. **local-semantic** (true semantics, offline) -- runs a real embedding
+   model **in-process** via
+   [`@huggingface/transformers`](https://huggingface.co/docs/transformers.js)
+   (ONNX/WASM, mean-pooled + L2-normalized). Labeled
+   `local-semantic:<model>`. Opt-in: install the package
+   (`bun add @huggingface/transformers`) and set
+   `CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING_MODEL` (or
+   `CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING=1` for the default
+   `Xenova/all-MiniLM-L6-v2`). Models download once to the cache dir and then
+   work fully offline; vectors share the same on-disk cache as remote.
+   Note: this tier needs the package present at runtime, so it is available
+   when running from source / `bun install`; the standalone `--compile`
+   binary cannot embed it and will skip this tier with a clear error.
+3. **local** (approximate fallback) -- a deterministic, offline, free,
    hashed bag-of-features vectorizer. It is **NOT** true semantics; it provides
    fuzzy sub-word matching on top of what BM25 already does. It is always
    labeled `local-approximate` in tool output, so the Advisor is told to lean
    toward keyword mode for exactness when it sees this label.
 
-When no remote embedding model is configured, semantic/hybrid modes use the
-local approximate backend automatically (and label it). To get true semantic
-search, configure a remote embedding model (any of the vars below works).
+When nothing is configured, semantic/hybrid modes use the local approximate
+backend automatically (and label it). To get true semantic search, configure
+a remote endpoint (any provider below) or the local-semantic tier.
 
 #### Embedding environment variables
 
@@ -327,6 +346,9 @@ search, configure a remote embedding model (any of the vars below works).
 | `CLAUDE_CODE_ADVISOR_EMBEDDING_BASE_URL` | OpenAI-compatible base URL for embeddings. Defaults to `OPENAI_BASE_URL` then `https://api.openai.com/v1`. An empty pathname auto-appends `/v1`. Alias: `CLAUDE_CODE_EMBEDDING_BASE_URL`. |
 | `CLAUDE_CODE_ADVISOR_EMBEDDING_API_KEY` | API key for the embedding endpoint. Defaults to `OPENAI_API_KEY` (so most setups need no extra key). Aliases: `CLAUDE_CODE_EMBEDDING_API_KEY`, `CLAUDE_CODE_EMBEDDING_API_TOKEN`. |
 | `CLAUDE_CODE_ADVISOR_SEMANTIC_SEARCH` | Set to `0`, `false`, or `off` to disable semantic/hybrid modes entirely (mode then ignored, keyword used). Alias: `CLAUDE_CODE_SEMANTIC_SEARCH`. |
+| `CLAUDE_CODE_ADVISOR_EMBEDDING_PROTOCOL` | `openai`, `ollama`, or `auto` (default). Force the wire protocol; `auto` detects Ollama by URL (`/api` path or port 11434). Alias: `CLAUDE_CODE_EMBEDDING_PROTOCOL`. |
+| `CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING_MODEL` | Enable the in-process local-semantic tier with this Transformers.js/ONNX model id (e.g. `Xenova/all-MiniLM-L6-v2`, `Xenova/bge-small-zh-v1.5` for Chinese). Ignored when a remote endpoint is configured. |
+| `CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING` | Convenience flag: `1`/`true`/`on` enables the local-semantic tier with the default model. |
 | `CLAUDE_CODE_ADVISOR_EMBEDDING_CACHE_DIR` | Override the on-disk embedding cache directory (useful for tests / ephemeral CI). |
 
 The embedding endpoint is **independent** from your chat-completion endpoint:
@@ -351,9 +373,20 @@ export CLAUDE_CODE_ADVISOR_EMBEDDING_API_KEY="sk-..."
 
 **Ollama (local, free):**
 ```bash
+# OpenAI-compatible endpoint:
 export CLAUDE_CODE_ADVISOR_EMBEDDING_MODEL="bge-m3"
 export CLAUDE_CODE_ADVISOR_EMBEDDING_BASE_URL="http://localhost:11434/v1"
+# ... or the Ollama native protocol (auto-detected):
+export CLAUDE_CODE_ADVISOR_EMBEDDING_BASE_URL="http://localhost:11434"
 # no API key needed for local Ollama
+```
+
+**In-process local model (offline, true semantics):**
+```bash
+bun add @huggingface/transformers   # once, when running from source
+export CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING=1
+# or pick a model, e.g. a Chinese-optimised one:
+export CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING_MODEL="Xenova/bge-small-zh-v1.5"
 ```
 
 **LM Studio (local, free):**
@@ -372,6 +405,25 @@ export CLAUDE_CODE_ADVISOR_EMBEDDING_API_KEY="jina_..."
 If none of the above are set, semantic/hybrid modes still work but use the
 `local-approximate` backend (clearly labeled) -- useful as a no-cost, offline
 starting point, but for real semantic recall configure a remote model.
+
+### ReadConversationLog -- project memory across restarts
+
+The Advisor's conversation log also keeps a **per-project long-term memory**:
+every snapshot is persisted (de-duplicated by content fingerprint) to a small
+JSONL archive keyed by the project directory. After a restart, or in a
+brand-new session in the same project, the Advisor can still search and read
+what was discussed before -- prior entries appear in `index` tagged
+`(prior session)` with high ids (`>= 1000000`), and work with every action
+(`search`, `read`, `around`, both keyword and semantic modes).
+
+| Variable | Description |
+|---|---|
+| `CLAUDE_CODE_ADVISOR_PROJECT_MEMORY` | Set to `0`, `false`, or `off` to disable the per-project archive entirely. |
+| `CLAUDE_CODE_ADVISOR_PROJECT_MEMORY_DIR` | Override the archive directory (default: a per-project hash dir under the OS cache dir). |
+
+The archive is FIFO-bounded (newest 4000 entries), never duplicates unchanged
+messages across runs/resumes, and all persistence is best-effort -- a failing
+disk never breaks the Advisor.
 
 ---
 

@@ -125,6 +125,7 @@ CONVERSATION HISTORY:
   - Search output labels the embedding backend in use; an "approximate local fallback" note means no remote embedding model is configured - lean toward keyword mode for exactness in that case.
 - Use \`action: "read"\` with specific message IDs to fetch the detailed content of only the messages you need
 - Be selective — index or search first, then read only the messages relevant to the question
+- Entries with ids >= 1000000 are prior project context restored from earlier sessions of this project (long-term memory across restarts). Search and read them for continuity with past discussions; they are older than the current-session entries.
 - The main agent's question should be self-contained; the log is supplementary context
 
 AVAILABLE TOOLS:
