@@ -324,7 +324,9 @@ export function createLocalEmbeddingBackend(): EmbeddingBackend {
 export const LOCAL_TRANSFORMERS_DEFAULT_MODEL = 'Xenova/all-MiniLM-L6-v2'
 
 function transformersCacheModel(model: string): string {
-  return 'local-semantic:' + model
+  // Include the inference dtype so vectors computed with a different
+  // quantization are never mixed within one cache namespace.
+  return 'local-semantic:q8:' + model
 }
 
 export interface TransformersBackendOptions {
@@ -359,6 +361,9 @@ async function defaultPipelineFactory(model: string): Promise<TransformersPipeli
     modEnv.backends.onnx.wasm ??= {}
   } catch { /* env shape may vary by version; non-fatal */ }
   const extractor = await mod.pipeline('feature-extraction', model, {
+    // q8 quantization: ~4x smaller download (~23MB vs ~90MB for MiniLM) and
+    // faster CPU inference, with negligible recall loss for search ranking.
+    dtype: 'q8',
     progress_callback: () => {},
   })
   return {
