@@ -107,9 +107,9 @@ function formatConversationIndex(
 export interface ConversationLogToolOptions {
   /**
    * Embedding backend used by search modes "semantic" and "hybrid".
-   * Defaults to the environment-resolved backend (remote embedding endpoint
-   * when CLAUDE_CODE_ADVISOR_EMBEDDING_MODEL is set, otherwise a local
-   * approximate fallback). Injectable for tests.
+   * Defaults to the environment-resolved backend (in-process local-semantic
+   * model by default, or the approximate fallback when opted out via
+   * CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING=0). Injectable for tests.
    */
   embedBackend?: EmbeddingBackend
   /**
@@ -228,9 +228,8 @@ function createConversationLogTool(
       }
       throw new EmbeddingError(
         `Semantic search backend "${backend.label}" failed: ${detail}. ` +
-        (backend.kind === 'remote'
-          ? 'Falling back is not possible in pure semantic mode - retry, use mode="keyword", or check the embedding configuration.'
-          : 'Use mode="keyword" instead.'),
+        'Use mode="keyword" instead, or check the local embedding model setup ' +
+        '(bun install; first use downloads the model once).',
       )
     }
 
@@ -253,9 +252,9 @@ function createConversationLogTool(
         matchedTokens: [],
         semanticScore: s.score,
       }))
-      const backendHint = backend.kind === 'local'
-        ? ' - approximate local fallback (set CLAUDE_CODE_ADVISOR_EMBEDDING_MODEL for true semantic search)'
-        : ''
+      const backendHint = backend.semantic
+        ? ''
+        : ' - approximate local fallback (local semantic model disabled; unset CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING=0 for true semantic search)'
       return formatSearchResults(
         input.query, top, searchIndex.N, semanticRank.totalMatches, undefined,
         { mode: 'semantic', backend: backend.label + backendHint },
@@ -265,9 +264,9 @@ function createConversationLogTool(
     // Hybrid: RRF-fuse keyword + semantic rankings.
     const fused = hybridSearch(keywordResponse.results, semanticRank.results)
     const top = fused.results.slice(0, input.top_k)
-    const backendHint = backend.kind === 'local'
-      ? ' - approximate local fallback (set CLAUDE_CODE_ADVISOR_EMBEDDING_MODEL for true semantic search)'
-      : ''
+    const backendHint = backend.semantic
+      ? ''
+      : ' - approximate local fallback (local semantic model disabled; unset CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING=0 for true semantic search)'
     return formatSearchResults(
       input.query, top, searchIndex.N, fused.totalMatches, input.match_mode,
       { mode: 'hybrid', backend: backend.label + backendHint },

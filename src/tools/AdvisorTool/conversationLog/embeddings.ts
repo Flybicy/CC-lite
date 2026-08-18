@@ -2,13 +2,15 @@
 // Embedding backends for ReadConversationLog semantic search.
 //
 // Two backends:
-//   - remote: any OpenAI-compatible /embeddings endpoint (OpenAI, SiliconFlow,
-//     Jina, Ollama /v1, LM Studio, vLLM, ...). Configured via env vars, with
-//     persistent on-disk caching so unchanged messages are never re-embedded.
-//   - local: a deterministic hashed bag-of-features vectorizer. No network,
-//     no cost, offline-safe. It is NOT true semantics - it provides fuzzy
-//     sub-word matching on top of what BM25 already does. Always labeled
-//     "local-approximate" in tool output so the advisor knows which one ran.
+//   - local-semantic (default): a true in-process embedding model via
+//     Transformers.js (ONNX/WASM, mean-pooled + L2-normalized). The model
+//     auto-downloads once to the on-disk cache on first use and works fully
+//     offline afterwards. Vectors share the persistent JSONL disk cache, so
+//     unchanged messages are never re-embedded, even across restarts.
+//   - local-approximate (fallback): a deterministic hashed bag-of-features
+//     vectorizer. No model, no network, always available. It is NOT true
+//     semantics - fuzzy sub-word matching on top of BM25 only. Always
+//     labeled "local-approximate" so the advisor knows which one ran.
 // ---------------------------------------------------------------------------
 
 import { createHash } from 'node:crypto'
@@ -21,11 +23,11 @@ import { tokenize } from './tokenizer.js'
 export type EmbeddingVector = Float32Array
 
 export interface EmbeddingBackend {
-  /** 'remote' (true semantic model) or 'local' (approximate fallback). */
+  /** 'local' for all built-in backends ('remote' kept for test mocks). */
   kind: 'remote' | 'local'
-  /** Human-readable label included in search output, e.g. "remote:bge-m3". */
+  /** Human-readable label included in search output, e.g. "local-semantic:Xenova/all-MiniLM-L6-v2". */
   label: string
-  /** True semantic understanding (remote embedding model). */
+  /** True semantic understanding (real embedding model, not the fallback). */
   semantic: boolean
   /** Embed texts; result order matches input order. */
   embed(
@@ -45,27 +47,8 @@ export class EmbeddingError extends Error {
 }
 
 // ---------------------------------------------------------------------------
-// Configuration
+// Shared helpers
 // ---------------------------------------------------------------------------
-
-/**
- * Wire protocol spoken by the remote embedding endpoint.
- *  - 'openai': OpenAI-compatible `POST {baseUrl}/embeddings` with
- *    `{model, input}` -> `{data: [{embedding, index}]}` (OpenAI, Azure-style
- *    gateways, SiliconFlow, OpenRouter, vLLM, Ollama's /v1, ...).
- *  - 'ollama': Ollama native `POST {baseUrl}/embed` with
- *    `{model, input}` -> `{embeddings: [[...]]}`.
- *  - 'auto' (default): pick 'ollama' when the base URL looks like an Ollama
- *    server (path ends in /api or port 11434), otherwise 'openai'.
- */
-export type EmbeddingProtocol = 'openai' | 'ollama' | 'auto'
-
-export interface EmbeddingConfig {
-  model: string
-  baseUrl: string
-  apiKey: string
-  protocol?: EmbeddingProtocol
-}
 
 function env(...names: string[]): string | undefined {
   for (const name of names) {
@@ -73,51 +56,6 @@ function env(...names: string[]): string | undefined {
     if (value) return value
   }
   return undefined
-}
-
-/** Resolve the remote embedding endpoint configuration, or null if unset. */
-export function resolveEmbeddingConfig(): EmbeddingConfig | null {
-  const model = env(
-    'CLAUDE_CODE_ADVISOR_EMBEDDING_MODEL',
-    'CLAUDE_CODE_EMBEDDING_MODEL',
-    'CLAUDE_CODE_EMBEDDING_MODEL_ID',
-  )
-  if (!model) return null
-  const baseUrl = env(
-    'CLAUDE_CODE_ADVISOR_EMBEDDING_BASE_URL',
-    'CLAUDE_CODE_EMBEDDING_BASE_URL',
-    'OPENAI_BASE_URL',
-  ) ?? 'https://api.openai.com/v1'
-  const apiKey = env(
-    'CLAUDE_CODE_ADVISOR_EMBEDDING_API_KEY',
-    'CLAUDE_CODE_EMBEDDING_API_KEY',
-    'OPENAI_API_KEY',
-    'CLAUDE_CODE_EMBEDDING_API_TOKEN',
-  ) ?? ''
-  const rawProtocol = env(
-    'CLAUDE_CODE_ADVISOR_EMBEDDING_PROTOCOL',
-    'CLAUDE_CODE_EMBEDDING_PROTOCOL',
-  )?.toLowerCase()
-  const protocol: EmbeddingProtocol =
-    rawProtocol === 'openai' || rawProtocol === 'ollama' ? rawProtocol : 'auto'
-  return { model, baseUrl: normalizeBaseUrl(baseUrl), apiKey, protocol }
-}
-
-/**
- * Resolve the effective wire protocol for a config. 'auto' detects Ollama by
- * URL shape (a base path ending in /api, or the default Ollama port 11434);
- * everything else uses the OpenAI-compatible protocol.
- */
-export function resolveEffectiveProtocol(cfg: EmbeddingConfig): 'openai' | 'ollama' {
-  if (cfg.protocol === 'openai' || cfg.protocol === 'ollama') return cfg.protocol
-  try {
-    const url = new URL(cfg.baseUrl)
-    if (url.pathname.replace(/\/+$/, '').endsWith('/api')) return 'ollama'
-    if (url.port === '11434') return 'ollama'
-  } catch {
-    // fall through to openai
-  }
-  return 'openai'
 }
 
 /** Explicit opt-out of semantic search modes entirely. */
@@ -128,29 +66,6 @@ export function isSemanticSearchDisabled(): boolean {
   )
   return flag === '0' || flag === 'false' || flag === 'off'
 }
-
-/**
- * Normalize a base URL for the /embeddings path.
- * "https://api.openai.com" and "https://api.openai.com/v1" both become
- * ".../v1/embeddings"; custom paths are preserved as-is.
- */
-export function normalizeBaseUrl(baseUrl: string): string {
-  const trimmed = baseUrl.replace(/\/+$/, '')
-  let parsed: URL
-  try {
-    parsed = new URL(trimmed)
-  } catch {
-    throw new EmbeddingError(`Invalid embedding base URL: ${baseUrl}`)
-  }
-  if (parsed.pathname === '' || parsed.pathname === '/') {
-    parsed.pathname = '/v1'
-  }
-  return parsed.toString().replace(/\/+$/, '')
-}
-
-// ---------------------------------------------------------------------------
-// Vector helpers
-// ---------------------------------------------------------------------------
 
 export function l2Normalize(vec: EmbeddingVector): EmbeddingVector {
   let sum = 0
@@ -302,143 +217,8 @@ export function resetEmbeddingMemoryCacheForTests(): void {
   diskCacheLoadedModels.clear()
 }
 
-// ---------------------------------------------------------------------------
-// Remote backend (OpenAI-compatible /embeddings)
-// ---------------------------------------------------------------------------
-
 const EMBED_BATCH_ITEMS = 32
 const EMBED_BATCH_CHARS = 96_000
-const EMBED_REQUEST_TIMEOUT_MS = 30_000
-const EMBED_MAX_ATTEMPTS = 3
-
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(resolve, ms)
-    signal?.addEventListener('abort', () => {
-      clearTimeout(timer)
-      reject(new EmbeddingError('Embedding request aborted'))
-    }, { once: true })
-  })
-}
-
-function fetchWithTimeout(
-  url: string,
-  init: RequestInit,
-  timeoutMs: number,
-  outerSignal?: AbortSignal,
-): Promise<Response> {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
-  const onOuterAbort = () => controller.abort()
-  outerSignal?.addEventListener('abort', onOuterAbort, { once: true })
-  return fetch(url, { ...init, signal: controller.signal }).finally(() => {
-    clearTimeout(timer)
-    outerSignal?.removeEventListener('abort', onOuterAbort)
-  })
-}
-
-function isRetryableStatus(status: number): boolean {
-  return status === 408 || status === 429 || status >= 500
-}
-
-function ollamaEmbedUrl(baseUrl: string): string {
-  const trimmed = baseUrl.replace(/\/+$/, '')
-  // Base URL already points at the Ollama API root ("http://host:11434/api")
-  // -> append /embed; otherwise append the full /api/embed path.
-  return trimmed.endsWith('/api') ? `${trimmed}/embed` : `${trimmed}/api/embed`
-}
-
-async function fetchEmbeddingsOnce(
-  cfg: EmbeddingConfig,
-  batch: string[],
-  signal?: AbortSignal,
-): Promise<number[][]> {
-  const headers: Record<string, string> = {
-    'content-type': 'application/json',
-  }
-  if (cfg.apiKey) headers.authorization = `Bearer ${cfg.apiKey}`
-  const protocol = resolveEffectiveProtocol(cfg)
-  const url = protocol === 'ollama' ? ollamaEmbedUrl(cfg.baseUrl) : `${cfg.baseUrl}/embeddings`
-  const response = await fetchWithTimeout(
-    url,
-    {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ model: cfg.model, input: batch }),
-    },
-    EMBED_REQUEST_TIMEOUT_MS,
-    signal,
-  )
-  if (!response.ok) {
-    const body = await response.text().catch(() => '')
-    throw new EmbeddingError(
-      `Embedding endpoint returned ${response.status}: ${body.slice(0, 300)}`,
-      response.status,
-    )
-  }
-  if (protocol === 'ollama') {
-    // Ollama native: { embeddings: number[][], model?, ... }
-    const json = (await response.json()) as { embeddings?: unknown; error?: unknown }
-    if (json.error) {
-      throw new EmbeddingError(`Embedding endpoint error: ${String(json.error).slice(0, 300)}`)
-    }
-    if (!Array.isArray(json.embeddings) || json.embeddings.length !== batch.length) {
-      throw new EmbeddingError(
-        `Embedding endpoint returned ${Array.isArray(json.embeddings) ? json.embeddings.length : 0} vectors for ${batch.length} inputs`,
-      )
-    }
-    return json.embeddings.map(item => {
-      if (!Array.isArray(item)) {
-        throw new EmbeddingError('Embedding endpoint returned a non-array vector')
-      }
-      return item as number[]
-    })
-  }
-  const json = (await response.json()) as {
-    data?: Array<{ embedding?: unknown; index?: unknown }>
-    error?: { message?: unknown }
-  }
-  if (json.error) {
-    throw new EmbeddingError(
-      `Embedding endpoint error: ${String(json.error.message ?? 'unknown').slice(0, 300)}`,
-    )
-  }
-  if (!Array.isArray(json.data) || json.data.length !== batch.length) {
-    throw new EmbeddingError(
-      `Embedding endpoint returned ${json.data?.length ?? 0} vectors for ${batch.length} inputs`,
-    )
-  }
-  const sorted = [...json.data].sort((a, b) => (Number(a.index ?? 0)) - (Number(b.index ?? 0)))
-  return sorted.map(item => {
-    if (!Array.isArray(item.embedding)) {
-      throw new EmbeddingError('Embedding endpoint returned a non-array vector')
-    }
-    return item.embedding as number[]
-  })
-}
-
-async function fetchEmbeddingsWithRetry(
-  cfg: EmbeddingConfig,
-  batch: string[],
-  signal?: AbortSignal,
-): Promise<number[][]> {
-  let lastError: unknown
-  for (let attempt = 1; attempt <= EMBED_MAX_ATTEMPTS; attempt++) {
-    try {
-      return await fetchEmbeddingsOnce(cfg, batch, signal)
-    } catch (err) {
-      lastError = err
-      if (err instanceof EmbeddingError && err.status !== undefined && !isRetryableStatus(err.status)) {
-        throw err
-      }
-      if (signal?.aborted) throw err
-      if (attempt < EMBED_MAX_ATTEMPTS) {
-        await sleep(400 * attempt + Math.random() * 200, signal)
-      }
-    }
-  }
-  throw lastError
-}
 
 function chunkBatches(texts: readonly string[]): string[][] {
   const batches: string[][] = []
@@ -462,59 +242,6 @@ function chunkBatches(texts: readonly string[]): string[][] {
 
 /** Batch size cap for the embed input text (chars). Exported for tests. */
 export const EMBED_TEXT_CAP_CHARS = 3_000
-
-/**
- * Create a caching remote embedding backend. Cached vectors are looked up by
- * sha256(model + text), so repeated advisor runs never re-embed unchanged
- * messages and only genuinely new messages cost an API call.
- */
-export function createRemoteEmbeddingBackend(
-  cfg: EmbeddingConfig = resolveEmbeddingConfig()!,
-): EmbeddingBackend {
-  if (!cfg) throw new EmbeddingError('No embedding configuration provided')
-  return {
-    kind: 'remote',
-    label: `remote:${cfg.model}`,
-    semantic: true,
-    async embed(texts, opts) {
-      if (texts.length === 0) return []
-      await loadDiskCache(cfg.model)
-      const results: EmbeddingVector[] = new Array(texts.length)
-      const misses: Array<{ index: number; text: string; key: string }> = []
-      for (let i = 0; i < texts.length; i++) {
-        const text = texts[i]!
-        if (!text.trim()) {
-          results[i] = new Float32Array(0)
-          continue
-        }
-        const key = embeddingCacheKey(cfg.model, text)
-        const cached = memoryCache.get(key)
-        if (cached) {
-          results[i] = cached
-        } else {
-          misses.push({ index: i, text, key })
-        }
-      }
-      if (misses.length > 0) {
-        const newEntries: Array<[string, EmbeddingVector]> = []
-        let cursor = 0
-        for (const batch of chunkBatches(misses.map(m => m.text))) {
-          const vectors = await fetchEmbeddingsWithRetry(cfg, batch, opts?.signal)
-          for (let i = 0; i < batch.length; i++) {
-            const miss = misses[cursor]!
-            const vector = toEmbeddingVector(vectors[i]!)
-            results[miss.index] = vector
-            newEntries.push([miss.key, vector])
-            cursor++
-          }
-        }
-        for (const [key, vector] of newEntries) memoryCache.set(key, vector)
-        appendDiskCache(cfg.model, newEntries)
-      }
-      return results
-    },
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Local approximate backend (no network, no config, deterministic)
@@ -590,9 +317,8 @@ export function createLocalEmbeddingBackend(): EmbeddingBackend {
 // failure, which the search layer already handles (hybrid degrades to
 // keyword-only, pure-semantic reports a clean error). Also covers the
 // compiled-binary case, where the package is typically NOT embedded into the
-// exe so the dynamic import fails cleanly. For true local semantics inside a
-// compiled binary, point a local Ollama / LM Studio at the *remote* backend
-// via CLAUDE_CODE_ADVISOR_EMBEDDING_BASE_URL=http://localhost:11434/v1.
+// exe so the dynamic import fails cleanly; set
+// CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING=0 there to use the approximate fallback.
 
 /** Default local ONNX embedding model (small, fast, cross-lingual-ish). */
 export const LOCAL_TRANSFORMERS_DEFAULT_MODEL = 'Xenova/all-MiniLM-L6-v2'
@@ -688,9 +414,9 @@ export function createTransformersLocalBackend(
         _transformersModelName = null
         throw new EmbeddingError(
           'Could not load the local embedding model "' + model + '". ' +
-          'Install it with `bun add @huggingface/transformers` (run-from-source) ' +
-          'or use a local Ollama/LM Studio via CLAUDE_CODE_ADVISOR_EMBEDDING_BASE_URL ' +
-          'for the compiled binary. Detail: ' +
+          'Run `bun install` (the @huggingface/transformers dependency) when ' +
+          'running from source, or set CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING=0 to ' +
+          'use the approximate local fallback. Detail: ' +
           (err instanceof Error ? err.message : String(err)).slice(0, 200),
         )
       }
@@ -728,25 +454,24 @@ export function createTransformersLocalBackend(
 
 /** Resolve the local Transformers.js model name when opted in, else null. */
 export function resolveLocalTransformersModel(): string | null {
+  const flag = env('CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING')
+  if (flag === '0' || flag === 'false' || flag === 'off') return null
   const explicit = env('CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING_MODEL')
   if (explicit) return explicit
-  const flag = env('CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING')
-  if (flag === '1' || flag === 'true' || flag === 'on') {
-    return LOCAL_TRANSFORMERS_DEFAULT_MODEL
-  }
-  return null
+  // Default-on: the local-semantic tier is the standard semantic backend.
+  return LOCAL_TRANSFORMERS_DEFAULT_MODEL
 }
 
 /**
  * Resolve the active embedding backend from the environment, in priority
- * order: explicit disable -> remote endpoint -> in-process Transformers.js
- * local-semantic model -> local approximate fallback. Returns null only when
- * semantic search is explicitly disabled.
+ * order: explicit disable -> in-process Transformers.js local-semantic model
+ * (default-on; CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING_MODEL picks the model) ->
+ * local approximate fallback (when opted out via
+ * CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING=0). Returns null only when semantic
+ * search is explicitly disabled.
  */
 export function resolveEmbeddingBackend(): EmbeddingBackend | null {
   if (isSemanticSearchDisabled()) return null
-  const cfg = resolveEmbeddingConfig()
-  if (cfg) return createRemoteEmbeddingBackend(cfg)
   const localModel = resolveLocalTransformersModel()
   if (localModel) return createTransformersLocalBackend(localModel)
   return createLocalEmbeddingBackend()

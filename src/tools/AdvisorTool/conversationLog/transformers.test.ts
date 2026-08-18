@@ -177,35 +177,39 @@ describe('resolveLocalTransformersModel / resolveEmbeddingBackend priority', () 
     expect(resolveLocalTransformersModel()).toBe('Xenova/bge-small-en')
   })
 
-  it('returns the default model when the convenience flag is on', () => {
-    setEnv({ CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING: '1' })
+  it('is default-on: returns the default model when nothing is set', () => {
     expect(resolveLocalTransformersModel()).toBe(LOCAL_TRANSFORMERS_DEFAULT_MODEL)
   })
 
-  it('returns null when neither is set', () => {
+  it('returns null (approximate fallback) when explicitly opted out', () => {
+    setEnv({ CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING: '0' })
+    expect(resolveLocalTransformersModel()).toBeNull()
+    setEnv({ CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING: 'off' })
     expect(resolveLocalTransformersModel()).toBeNull()
   })
 
-  it('resolveEmbeddingBackend uses the transformers tier (by label) when opted in and no remote', () => {
-    setEnv({ CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING_MODEL: 'Xenova/test' })
+  it('opt-out wins over an explicit model', () => {
+    setEnv({
+      CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING: '0',
+      CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING_MODEL: 'Xenova/test',
+    })
+    expect(resolveLocalTransformersModel()).toBeNull()
+  })
+
+  it('resolveEmbeddingBackend uses the transformers tier by default', () => {
     const b = resolveEmbeddingBackend()
     expect(b).not.toBeNull()
+    expect(b!.label).toBe('local-semantic:' + LOCAL_TRANSFORMERS_DEFAULT_MODEL)
+  })
+
+  it('resolveEmbeddingBackend honors an explicit local model', () => {
+    setEnv({ CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING_MODEL: 'Xenova/test' })
+    const b = resolveEmbeddingBackend()
     expect(b!.label).toBe('local-semantic:Xenova/test')
   })
 
-  it('remote endpoint takes priority over the local transformers tier', () => {
-    setEnv({
-      CLAUDE_CODE_ADVISOR_EMBEDDING_MODEL: 'remote-vec',
-      CLAUDE_CODE_ADVISOR_EMBEDDING_BASE_URL: 'https://example.com/v1',
-      CLAUDE_CODE_ADVISOR_EMBEDDING_API_KEY: 'k',
-      CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING_MODEL: 'Xenova/test',
-    })
-    const b = resolveEmbeddingBackend()
-    expect(b!.kind).toBe('remote')
-    expect(b!.label).toBe('remote:remote-vec')
-  })
-
-  it('falls back to local-approximate when nothing is configured', () => {
+  it('falls back to local-approximate only when opted out', () => {
+    setEnv({ CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING: '0' })
     const b = resolveEmbeddingBackend()
     expect(b!.label).toBe('local-approximate')
   })

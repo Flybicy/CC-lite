@@ -303,108 +303,59 @@ knows which one ran and never gets silent fallback.
 
 #### Embedding backends
 
-Semantic and hybrid modes need embeddings. There are three backends,
-resolved in this priority order:
+Semantic and hybrid modes need embeddings. Claudium runs them **fully local**
+-- no API key, no per-token cost, your conversation text never leaves the
+machine. Two backends, resolved in this priority order:
 
-1. **remote** (true semantics) -- speaks **both mainstream embedding
-   protocols** with auto-detection:
-   - *OpenAI-compatible* `POST {base}/embeddings` (OpenAI, SiliconFlow,
-     Jina, OpenRouter, vLLM, LM Studio, Ollama's `/v1`, ...), and
-   - *Ollama native* `POST /api/embed` (auto-detected when the base URL ends
-     in `/api` or uses port 11434; force with
-     `CLAUDE_CODE_ADVISOR_EMBEDDING_PROTOCOL=ollama`).
-   Configured via env vars, with **persistent on-disk caching** so unchanged
-   messages are never re-embedded (JSONL per model, survives restarts).
-2. **local-semantic** (true semantics, offline) -- runs a real embedding
-   model **in-process** via
+1. **local-semantic** (default, true semantics) -- a real embedding model
+   running **in-process** via
    [`@huggingface/transformers`](https://huggingface.co/docs/transformers.js)
-   (ONNX/WASM, mean-pooled + L2-normalized). Labeled
-   `local-semantic:<model>`. Opt-in: install the package
-   (`bun add @huggingface/transformers`) and set
-   `CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING_MODEL` (or
-   `CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING=1` for the default
-   `Xenova/all-MiniLM-L6-v2`). Models download once to the cache dir and then
-   work fully offline; vectors share the same on-disk cache as remote.
-   Note: this tier needs the package present at runtime, so it is available
-   when running from source / `bun install`; the standalone `--compile`
-   binary cannot embed it and will skip this tier with a clear error.
-3. **local** (approximate fallback) -- a deterministic, offline, free,
-   hashed bag-of-features vectorizer. It is **NOT** true semantics; it provides
-   fuzzy sub-word matching on top of what BM25 already does. It is always
-   labeled `local-approximate` in tool output, so the Advisor is told to lean
-   toward keyword mode for exactness when it sees this label.
+   (ONNX/WASM, mean-pooled + L2-normalized), labeled
+   `local-semantic:<model>`. The package is a normal dependency, so
+   `bun install` (or the one-line installer) brings it in automatically --
+   **clone, install, done**. On first use the model downloads itself once
+   into the on-disk cache; afterwards everything works fully offline.
+   Vectors are additionally cached on disk (JSONL per model), so unchanged
+   messages are never re-embedded, even across restarts.
+   Note: the standalone `--compile` binary cannot embed the transformers
+   package; there it degrades with a clear error -- set
+   `CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING=0` in that case.
+2. **local-approximate** (fallback) -- a deterministic, offline, free,
+   hashed bag-of-features vectorizer. It is **NOT** true semantics; it
+   provides fuzzy sub-word matching on top of what BM25 already does. Always
+   labeled `local-approximate` in tool output, so the Advisor is told to
+   lean toward keyword mode for exactness when it sees this label. Used when
+   you opt out of the model tier (`CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING=0`).
 
-When nothing is configured, semantic/hybrid modes use the local approximate
-backend automatically (and label it). To get true semantic search, configure
-a remote endpoint (any provider below) or the local-semantic tier.
+**Model download sizes** (quantized q8, one-time, includes tokenizer/config):
+
+| Model | Size | Notes |
+|---|---|---|
+| `Xenova/all-MiniLM-L6-v2` (default) | ~23 MB | fast, English-leaning |
+| `Xenova/bge-small-zh-v1.5` | ~25 MB | **recommended for Chinese** conversations |
+| `Xenova/multilingual-e5-small` | ~120 MB | strongest multilingual recall |
+
+Pick a model with `CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING_MODEL`. The download
+lands in the cache dir (next to the vector cache) and is reused forever.
 
 #### Embedding environment variables
 
 | Variable | Description |
 |---|---|
-| `CLAUDE_CODE_ADVISOR_EMBEDDING_MODEL` | Remote embedding model id. Set this (or an alias) to enable true semantic search. Aliases: `CLAUDE_CODE_EMBEDDING_MODEL`, `CLAUDE_CODE_EMBEDDING_MODEL_ID`. |
-| `CLAUDE_CODE_ADVISOR_EMBEDDING_BASE_URL` | OpenAI-compatible base URL for embeddings. Defaults to `OPENAI_BASE_URL` then `https://api.openai.com/v1`. An empty pathname auto-appends `/v1`. Alias: `CLAUDE_CODE_EMBEDDING_BASE_URL`. |
-| `CLAUDE_CODE_ADVISOR_EMBEDDING_API_KEY` | API key for the embedding endpoint. Defaults to `OPENAI_API_KEY` (so most setups need no extra key). Aliases: `CLAUDE_CODE_EMBEDDING_API_KEY`, `CLAUDE_CODE_EMBEDDING_API_TOKEN`. |
+| `CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING_MODEL` | Transformers.js/ONNX model id for the local-semantic tier (default `Xenova/all-MiniLM-L6-v2`; use `Xenova/bge-small-zh-v1.5` for Chinese). Downloaded once on first use, then offline. |
+| `CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING` | Set to `0`, `false`, or `off` to skip the model tier and use the approximate local fallback instead. |
 | `CLAUDE_CODE_ADVISOR_SEMANTIC_SEARCH` | Set to `0`, `false`, or `off` to disable semantic/hybrid modes entirely (mode then ignored, keyword used). Alias: `CLAUDE_CODE_SEMANTIC_SEARCH`. |
-| `CLAUDE_CODE_ADVISOR_EMBEDDING_PROTOCOL` | `openai`, `ollama`, or `auto` (default). Force the wire protocol; `auto` detects Ollama by URL (`/api` path or port 11434). Alias: `CLAUDE_CODE_EMBEDDING_PROTOCOL`. |
-| `CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING_MODEL` | Enable the in-process local-semantic tier with this Transformers.js/ONNX model id (e.g. `Xenova/all-MiniLM-L6-v2`, `Xenova/bge-small-zh-v1.5` for Chinese). Ignored when a remote endpoint is configured. |
-| `CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING` | Convenience flag: `1`/`true`/`on` enables the local-semantic tier with the default model. |
-| `CLAUDE_CODE_ADVISOR_EMBEDDING_CACHE_DIR` | Override the on-disk embedding cache directory (useful for tests / ephemeral CI). |
+| `CLAUDE_CODE_ADVISOR_EMBEDDING_CACHE_DIR` | Override the on-disk cache directory for models and vectors (useful for tests / ephemeral CI). |
 
-The embedding endpoint is **independent** from your chat-completion endpoint:
-you can chat with DeepSeek while embedding with SiliconFlow, etc. The API key
-falls back to `OPENAI_API_KEY`, so if your chat and embedding providers are the
-same you can skip the embedding key entirely.
-
-#### Provider examples (embeddings)
-
-**OpenAI:**
+**Example (Chinese conversations):**
 ```bash
-export CLAUDE_CODE_ADVISOR_EMBEDDING_MODEL="text-embedding-3-small"
-# OPENAI_API_KEY + OPENAI_BASE_URL reused automatically
-```
-
-**SiliconFlow:**
-```bash
-export CLAUDE_CODE_ADVISOR_EMBEDDING_MODEL="BAAI/bge-m3"
-export CLAUDE_CODE_ADVISOR_EMBEDDING_BASE_URL="https://api.siliconflow.cn/v1"
-export CLAUDE_CODE_ADVISOR_EMBEDDING_API_KEY="sk-..."
-```
-
-**Ollama (local, free):**
-```bash
-# OpenAI-compatible endpoint:
-export CLAUDE_CODE_ADVISOR_EMBEDDING_MODEL="bge-m3"
-export CLAUDE_CODE_ADVISOR_EMBEDDING_BASE_URL="http://localhost:11434/v1"
-# ... or the Ollama native protocol (auto-detected):
-export CLAUDE_CODE_ADVISOR_EMBEDDING_BASE_URL="http://localhost:11434"
-# no API key needed for local Ollama
-```
-
-**In-process local model (offline, true semantics):**
-```bash
-bun add @huggingface/transformers   # once, when running from source
-export CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING=1
-# or pick a model, e.g. a Chinese-optimised one:
 export CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING_MODEL="Xenova/bge-small-zh-v1.5"
+# first semantic search downloads ~25 MB once; everything is offline after that
 ```
 
-**LM Studio (local, free):**
-```bash
-export CLAUDE_CODE_ADVISOR_EMBEDDING_MODEL="your-embedding-model"
-export CLAUDE_CODE_ADVISOR_EMBEDDING_BASE_URL="http://localhost:1234/v1"
-```
-
-**Jina:**
-```bash
-export CLAUDE_CODE_ADVISOR_EMBEDDING_MODEL="jina-embeddings-v3"
-export CLAUDE_CODE_ADVISOR_EMBEDDING_BASE_URL="https://api.jina.ai/v1"
-export CLAUDE_CODE_ADVISOR_EMBEDDING_API_KEY="jina_..."
-```
-
-If none of the above are set, semantic/hybrid modes still work but use the
-`local-approximate` backend (clearly labeled) -- useful as a no-cost, offline
-starting point, but for real semantic recall configure a remote model.
+If the model tier is unavailable (e.g. inside the compiled binary without
+the opt-out), semantic/hybrid modes report a clear error and hybrid degrades
+to keyword-only; keyword mode is always available regardless.
 
 ### ReadConversationLog -- project memory across restarts
 

@@ -3,13 +3,10 @@ import { join } from 'node:path'
 import {
   computeLocalEmbedding,
   createLocalEmbeddingBackend,
-  createRemoteEmbeddingBackend,
   embeddingCacheKey,
   isSemanticSearchDisabled,
   l2Normalize,
   resetEmbeddingMemoryCacheForTests,
-  normalizeBaseUrl,
-  resolveEmbeddingConfig,
   toEmbeddingVector,
   EmbeddingError,
   type EmbeddingBackend,
@@ -123,44 +120,6 @@ describe('embedding configuration', () => {
     }
   }
 
-  it('returns null when no model is configured', () => {
-    withEnv({}, () => {
-      expect(resolveEmbeddingConfig()).toBeNull()
-    })
-  })
-
-  it('reads the dedicated advisor model variable first', () => {
-    withEnv(
-      {
-        CLAUDE_CODE_ADVISOR_EMBEDDING_MODEL: 'bge-m3',
-        CLAUDE_CODE_ADVISOR_EMBEDDING_BASE_URL: 'https://api.siliconflow.cn/v1',
-        CLAUDE_CODE_ADVISOR_EMBEDDING_API_KEY: 'sk-test',
-      },
-      () => {
-        const cfg = resolveEmbeddingConfig()!
-        expect(cfg.model).toBe('bge-m3')
-        expect(cfg.baseUrl).toBe('https://api.siliconflow.cn/v1')
-        expect(cfg.apiKey).toBe('sk-test')
-      },
-    )
-  })
-
-  it('falls back to OPENAI_BASE_URL / OPENAI_API_KEY', () => {
-    withEnv(
-      {
-        CLAUDE_CODE_EMBEDDING_MODEL: 'text-embedding-3-small',
-        OPENAI_BASE_URL: 'https://api.openai.com/v1',
-        OPENAI_API_KEY: 'sk-openai',
-      },
-      () => {
-        const cfg = resolveEmbeddingConfig()!
-        expect(cfg.model).toBe('text-embedding-3-small')
-        expect(cfg.baseUrl).toBe('https://api.openai.com/v1')
-        expect(cfg.apiKey).toBe('sk-openai')
-      },
-    )
-  })
-
   it('disables semantic search via flag', () => {
     withEnv(
       { CLAUDE_CODE_ADVISOR_EMBEDDING_MODEL: 'x', CLAUDE_CODE_ADVISOR_SEMANTIC_SEARCH: '0' },
@@ -174,15 +133,6 @@ describe('embedding configuration', () => {
         expect(isSemanticSearchDisabled()).toBe(true)
       },
     )
-  })
-
-  it('normalizes base URLs', () => {
-    expect(normalizeBaseUrl('https://api.openai.com')).toBe('https://api.openai.com/v1')
-    expect(normalizeBaseUrl('https://api.openai.com/v1')).toBe('https://api.openai.com/v1')
-    expect(normalizeBaseUrl('https://api.openai.com/v1/')).toBe('https://api.openai.com/v1')
-    expect(normalizeBaseUrl('http://localhost:11434')).toBe('http://localhost:11434/v1')
-    expect(normalizeBaseUrl('http://localhost:11434/v1')).toBe('http://localhost:11434/v1')
-    expect(() => normalizeBaseUrl('not a url')).toThrow(EmbeddingError)
   })
 
   it('cache keys differ per model and text', () => {
@@ -543,7 +493,7 @@ describe('ConversationLogTool semantic search', () => {
       match_mode: 'or',
     })
     expect(result.data).toContain('local-approximate')
-    expect(result.data).toContain('CLAUDE_CODE_ADVISOR_EMBEDDING_MODEL')
+    expect(result.data).toContain('CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING=0')
   })
 })
 
@@ -571,89 +521,3 @@ describe('search schema mode field', () => {
   })
 })
 
-// ---------------------------------------------------------------------------
-// Remote backend plumbing (fetch mock)
-// ---------------------------------------------------------------------------
-
-describe('remote embedding backend', () => {
-  const originalFetch = globalThis.fetch
-  const { mkdtempSync, rmSync } = require('node:fs') as typeof import('node:fs')
-  const { tmpdir } = require('node:os') as typeof import('node:os')
-  beforeAll(() => {
-    process.env.CLAUDE_CODE_ADVISOR_EMBEDDING_CACHE_DIR = mkdtempSync(join(tmpdir(), 'claudium-embed-test-'))
-    resetEmbeddingMemoryCacheForTests()
-  })
-  afterAll(() => {
-    try {
-      rmSync(process.env.CLAUDE_CODE_ADVISOR_EMBEDDING_CACHE_DIR!, { recursive: true, force: true })
-    } catch {}
-    delete process.env.CLAUDE_CODE_ADVISOR_EMBEDDING_CACHE_DIR
-  })
-
-  function installFetchMock(handler: (url: string, body: any) => { status: number; json: unknown }) {
-    globalThis.fetch = (async (url: any, init: any) => {
-      const body = JSON.parse(String(init.body))
-      const { status, json } = handler(String(url), body)
-      return new Response(JSON.stringify(json), {
-        status,
-        headers: { 'content-type': 'application/json' },
-      })
-    }) as typeof fetch
-  }
-
-  it('batches, caches, and returns vectors in order', async () => {
-    const requests: any[] = []
-    installFetchMock((url, body) => {
-      requests.push(body)
-      return {
-        status: 200,
-        json: {
-          data: body.input.map((text: string, index: number) => ({
-            index,
-            embedding: [text.length, 1],
-          })),
-        },
-      }
-    })
-    try {
-      const backend = createRemoteEmbeddingBackend({
-        model: 'test-embed',
-        baseUrl: 'https://embed.example.com/v1',
-        apiKey: 'sk-test',
-      })
-      const texts = ['a', 'bb', 'ccc']
-      const vectors = await backend.embed(texts)
-      expect(vectors).toHaveLength(3)
-      // First vector should be for 'a': raw [1,1] normalized
-      expect(vectors[0]![0]!).toBeCloseTo(Math.SQRT1_2, 5)
-      expect(requests).toHaveLength(1)
-      expect(requests[0].model).toBe('test-embed')
-
-      // Second call with overlapping texts only embeds the new ones.
-      await backend.embed(['a', 'dddd'])
-      const lastRequest = requests[requests.length - 1]!
-      expect(lastRequest.input).toEqual(['dddd'])
-    } finally {
-      globalThis.fetch = originalFetch
-    }
-  })
-
-  it('does not retry non-retryable status codes', async () => {
-    let calls = 0
-    installFetchMock(() => {
-      calls++
-      return { status: 401, json: { error: { message: 'bad key' } } }
-    })
-    try {
-      const backend = createRemoteEmbeddingBackend({
-        model: 'test-embed',
-        baseUrl: 'https://embed.example.com/v1',
-        apiKey: 'sk-bad',
-      })
-      await expect(backend.embed(['x'])).rejects.toThrow(EmbeddingError)
-      expect(calls).toBe(1)
-    } finally {
-      globalThis.fetch = originalFetch
-    }
-  })
-})

@@ -122,7 +122,7 @@ CONVERSATION HISTORY:
   - \`mode: "keyword"\` (default) - BM25 exact-term search. Best for identifiers, file names, error codes, API names.
   - \`mode: "semantic"\` - embedding vector similarity. Best when the topic may be discussed in different words than your query uses.
   - \`mode: "hybrid"\` - fuses keyword and semantic rankings. A good default for broad questions.
-  - Search output labels the embedding backend in use; an "approximate local fallback" note means no remote embedding model is configured - lean toward keyword mode for exactness in that case.
+  - Search output labels the embedding backend in use; an "approximate local fallback" note means the local embedding model is unavailable/disabled - lean toward keyword mode for exactness in that case.
 - Use \`action: "read"\` with specific message IDs to fetch the detailed content of only the messages you need
 - Be selective — index or search first, then read only the messages relevant to the question
 - Entries with ids >= 1000000 are prior project context restored from earlier sessions of this project (long-term memory across restarts). Search and read them for continuity with past discussions; they are older than the current-session entries.
