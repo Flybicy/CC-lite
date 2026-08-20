@@ -419,9 +419,11 @@ export function createTransformersLocalBackend(
         _transformersModelName = null
         throw new EmbeddingError(
           'Could not load the local embedding model "' + model + '". ' +
-          'Run `bun install` (the @huggingface/transformers dependency) when ' +
-          'running from source, or set CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING=0 to ' +
-          'use the approximate local fallback. Detail: ' +
+          'Reinstall with the official installer (it provisions the embedding ' +
+          'runtime and prefetches the model), or run `bun install` when running ' +
+          'from source. Verify anytime with `cclite-verify-embeddings`. Set ' +
+          'CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING=0 to use the approximate local ' +
+          'fallback instead. Detail: ' +
           (err instanceof Error ? err.message : String(err)).slice(0, 200),
         )
       }

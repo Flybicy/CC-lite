@@ -4,6 +4,10 @@ cclite-cli
 cclite-cli-dev
 cclite-cli.exe
 cclite-cli-dev.exe
+cclite.js
+verify-embeddings.js
+# Git Bash on Windows leaves this stray build-log file behind (pre-existing quirk)
+/cclite
 .claude/
 
 # logs & editor

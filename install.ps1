@@ -4,8 +4,8 @@
   CC-lite installer for Windows (PowerShell).
 .DESCRIPTION
   Checks for Bun and ripgrep, installs them if needed (via winget/choco/scoop/npm),
-  clones the repository, builds a cclite-cli-dev.exe, and installs it as
-  cclite.exe under a directory on PATH.
+  clones the repository, builds a JS bundle, installs it plus the local
+  semantic embedding runtime, and creates cclite.cmd shims on PATH.
 .NOTES
   Usage (run from an elevated or normal PowerShell 5.1+ / PowerShell 7+ window):
     irm https://raw.githubusercontent.com/Flybicy/CC-lite/main/install.ps1 | iex
@@ -17,6 +17,7 @@ param(
   [string]$Repo      = "https://github.com/Flybicy/CC-lite.git",
   [string]$InstallDir,
   [string]$BuildDir,
+  [string]$LibDir,
   [switch]$SkipBuild,
   [string]$BunMinVersion = "1.3.11"
 )
@@ -27,6 +28,14 @@ $ProgressPreference     = "SilentlyContinue"  # speed up Invoke-WebRequest
 # --- install dir ---
 if (-not $InstallDir) { $InstallDir = Join-Path $env:USERPROFILE ".local\bin" }
 if (-not $BuildDir)   { $BuildDir   = Join-Path $env:LOCALAPPDATA "cclite-build" }
+# Runtime home: the JS bundle plus the node_modules carrying the local
+# semantic embedding stack (Transformers.js + ONNX Runtime). A single
+# compiled .exe cannot be used - `bun build --compile` puts onnxruntime's
+# native .node file in a virtual filesystem that cannot be dlopen'd, which
+# silently degrades semantic search to the approximate fallback.
+if (-not $LibDir)     { $LibDir     = Join-Path $env:USERPROFILE ".local\lib\cclite" }
+# Pinned: must match the repo's package.json/bun.lock.
+$TransformersVersion = "3.8.1"
 
 # --- helpers ---
 function Write-Info  { param([string]$m) Write-Host "[*] $m" -ForegroundColor Cyan }
@@ -216,29 +225,141 @@ function Install-Deps {
   } finally { Pop-Location }
 }
 
-function Build-Binary {
-  Write-Info "Building cclite..."
+function Build-Bundle {
+  Write-Info "Building cclite (JS bundle)..."
   Push-Location $BuildDir
   try {
-    bun run build:dev:full
+    bun run build:bundle:cclite
+    $bundle = Join-Path $BuildDir "cclite.js"
+    if (-not (Test-Path $bundle)) { Write-Fail "Build did not produce cclite.js." }
+    # Standalone verifier shipped next to the bundle so the model can be
+    # re-checked later via cclite-verify-embeddings.cmd.
+    bun run build:bundle:verify
     if ($LASTEXITCODE -ne 0) {
-      Write-Warn "build:dev:full failed, trying build:dev:cclite..."
-      bun run build:dev:cclite
+      Write-Warn "Could not build the embeddings verifier (non-fatal)"
     }
-    # locate the built binary (.exe on Windows)
-    $bin = Join-Path $BuildDir "cclite-cli-dev.exe"
-    if (-not (Test-Path $bin)) { $bin = Join-Path $BuildDir "cclite-cli-dev" }
-    if (-not (Test-Path $bin)) { Write-Fail "Build did not produce cclite-cli-dev(.exe)." }
-    Write-Ok "Binary built: $bin"
-    return $bin
+    Write-Ok "Bundle built: $bundle"
+    return $bundle
   } finally { Pop-Location }
 }
 
-function Install-Binary([string]$Binary) {
+# Install the runtime home: the JS bundle plus a minimal node_modules that
+# carries the local semantic embedding stack.
+function Install-Lib {
+  Write-Info "Installing runtime to $LibDir..."
+  New-Item -ItemType Directory -Force -Path $LibDir | Out-Null
+  Copy-Item -Path (Join-Path $BuildDir "cclite.js") -Destination (Join-Path $LibDir "cclite.js") -Force
+  $verifySrc = Join-Path $BuildDir "verify-embeddings.js"
+  if (Test-Path $verifySrc) {
+    Copy-Item -Path $verifySrc -Destination (Join-Path $LibDir "verify-embeddings.js") -Force
+  }
+
+  # Minimal manifest: only the embedding stack resolves at runtime; every
+  # other dependency is already inlined in the bundle.
+  $manifest = @"
+{
+  "name": "cclite-runtime",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@huggingface/transformers": "$TransformersVersion"
+  }
+}
+"@
+  Set-Content -Path (Join-Path $LibDir "package.json") -Value $manifest -Encoding UTF8
+
+  Write-Info "Installing the local semantic embedding model runtime (~130MB)..."
+  Push-Location $LibDir
+  try {
+    bun install --trust 2>$null
+    if ($LASTEXITCODE -ne 0) { bun install }
+    if ($LASTEXITCODE -ne 0) {
+      Write-Warn "Could not install the embedding runtime."
+      Write-Warn "Semantic search will fall back to approximate matching."
+      return
+    }
+  } finally { Pop-Location }
+
+  Trim-Lib
+  Write-Ok "Runtime installed: $LibDir"
+}
+
+# Drop what the embedding path never loads: sourcemaps, type stubs, the
+# browser ONNX build, and the foreign-platform native binaries.
+function Trim-Lib {
+  $nm = Join-Path $LibDir "node_modules"
+  if (-not (Test-Path $nm)) { return }
+  $before = [math]::Round((Get-ChildItem $nm -Recurse -File -ErrorAction SilentlyContinue |
+    Measure-Object -Property Length -Sum).Sum / 1MB)
+  Get-ChildItem $nm -Recurse -Filter "*.map" -File -ErrorAction SilentlyContinue |
+    Remove-Item -Force -ErrorAction SilentlyContinue
+  Remove-Item -Recurse -Force (Join-Path $nm "@types") -ErrorAction SilentlyContinue
+  Remove-Item -Recurse -Force (Join-Path $nm "onnxruntime-web") -ErrorAction SilentlyContinue
+  $napi = Join-Path $nm "onnxruntime-nodein
+api-v3"
+  if (Test-Path $napi) {
+    Get-ChildItem $napi -Directory -ErrorAction SilentlyContinue | Where-Object {
+      $_.Name -ne "win32"
+    } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+  }
+  $after = [math]::Round((Get-ChildItem $nm -Recurse -File -ErrorAction SilentlyContinue |
+    Measure-Object -Property Length -Sum).Sum / 1MB)
+  Write-Info "Trimmed runtime: ${before}MB -> ${after}MB"
+}
+
+# Download + smoke-test the embedding model so the first search is instant
+# and the user sees proof that real semantic search works.
+function Prefetch-Model {
+  $verify = Join-Path $LibDir "verify-embeddings.js"
+  if (-not (Test-Path $verify)) { return }
+  Write-Info "Downloading the semantic model (~23MB, one time) and verifying..."
+  Push-Location $LibDir
+  try {
+    bun ./verify-embeddings.js
+    if ($LASTEXITCODE -eq 0) {
+      Write-Ok "Semantic search ready"
+    } else {
+      Write-Warn "Model prefetch/verification failed - semantic search will fall"
+      Write-Warn "back to approximate matching. Re-run: cclite-verify-embeddings"
+    }
+  } finally { Pop-Location }
+}
+
+# cclite / cclite-bypass / cclite-verify-embeddings are .cmd shims that run
+# `bun` against the installed bundle. No `cd` in the main shim: cclite must
+# operate on the user's current directory (Bun resolves node_modules from the
+# entry script's own location).
+function Install-Launchers {
   New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-  $dest = Join-Path $InstallDir "cclite.exe"
-  Copy-Item -Path $Binary -Destination $dest -Force
-  Write-Ok "Installed: $dest"
+  $bundle = Join-Path $LibDir "cclite.js"
+
+  $mainCmd = @"
+@echo off
+setlocal
+bun "$bundle" %*
+"@
+  Set-Content -Path (Join-Path $InstallDir "cclite.cmd") -Value $mainCmd -Encoding ASCII
+  Write-Ok "Installed: $(Join-Path $InstallDir 'cclite.cmd')"
+
+  $bypassCmd = @"
+@echo off
+setlocal
+set IS_SANDBOX=1
+bun "$bundle" --permission-mode bypassPermissions %*
+"@
+  Set-Content -Path (Join-Path $InstallDir "cclite-bypass.cmd") -Value $bypassCmd -Encoding ASCII
+  Write-Ok "Installed: $(Join-Path $InstallDir 'cclite-bypass.cmd')"
+
+  $verifyJs = Join-Path $LibDir "verify-embeddings.js"
+  if (Test-Path $verifyJs) {
+    $verifyCmd = @"
+@echo off
+setlocal
+bun "$verifyJs" %*
+"@
+    Set-Content -Path (Join-Path $InstallDir "cclite-verify-embeddings.cmd") -Value $verifyCmd -Encoding ASCII
+    Write-Ok "Installed: $(Join-Path $InstallDir 'cclite-verify-embeddings.cmd')"
+  }
 
   # path warning
   $pathParts = $env:PATH -split ';'
@@ -274,8 +395,10 @@ function Main {
   Clone-Repo
   Install-Deps
   if (-not $SkipBuild) {
-    $bin = Build-Binary
-    Install-Binary $bin
+    Build-Bundle | Out-Null
+    Install-Lib
+    Install-Launchers
+    Prefetch-Model
   }
   Write-Host ""
   Write-Host "  Installation complete!" -ForegroundColor Green
@@ -283,6 +406,7 @@ function Main {
   Write-Host "  Run it:" -ForegroundColor White
   Write-Host "    cclite                       # interactive REPL"
   Write-Host "    cclite -p `"your prompt`"            # one-shot mode"
+  Write-Host "    cclite-verify-embeddings            # re-check the local semantic model"
   Write-Host ""
   Write-Host "  Set your Anthropic Messages API key:" -ForegroundColor White
   Write-Host "    `$env:ANTHROPIC_API_KEY = `"sk-ant-...`""

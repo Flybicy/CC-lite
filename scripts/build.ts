@@ -9,6 +9,12 @@ const pkg = await Bun.file(new URL('../package.json', import.meta.url)).json() a
 const args = process.argv.slice(2)
 const compile = args.includes('--compile')
 const dev = args.includes('--dev')
+// --bundle: emit a plain JS bundle (no single-file --compile) so optional
+// native deps (the Transformers.js/ONNX embedding stack) stay resolvable
+// from a sibling node_modules at runtime. `bun build --compile` cannot
+// dlopen onnxruntime's .node binary out of its virtual filesystem, which
+// is why the compiled binary can only use the approximate fallback.
+const bundleOnly = args.includes('--bundle')
 
 const fullExperimentalFeatures = [
   'AGENT_MEMORY_SNAPSHOT',
@@ -139,7 +145,11 @@ for (let i = 0; i < args.length; i += 1) {
 }
 const features = [...featureSet]
 
-const outfileName = dev ? 'cclite-cli-dev' : 'cclite-cli'
+const outfileName = bundleOnly
+  ? 'cclite.js'
+  : dev
+    ? 'cclite-cli-dev'
+    : 'cclite-cli'
 const outfile = compile ? `./dist/${outfileName}` : `./${outfileName}`
 const buildTime = new Date().toISOString()
 const version = dev ? getDevVersion(pkg.version) : pkg.version
@@ -157,6 +167,14 @@ const externals = [
   'image-processor-napi',
   'modifiers-napi',
   'url-handler-napi',
+  // Bundle mode keeps the embedding stack external so it loads from the
+  // runtime node_modules installed next to the bundle. Compiled mode leaves
+  // them out entirely (the dynamic import degrades to the approximate
+  // fallback) because the native ONNX binary cannot be dlopen'd from the
+  // compiled binary's virtual filesystem.
+  ...(bundleOnly
+    ? ['@huggingface/transformers', 'onnxruntime-node', 'onnxruntime-web', 'sharp']
+    : []),
 ]
 
 const defines = {
@@ -189,7 +207,7 @@ const cmd = [
   'bun',
   'build',
   './src/entrypoints/cli.tsx',
-  '--compile',
+  ...(bundleOnly ? [] : ['--compile']),
   '--target',
   'bun',
   '--format',
@@ -197,7 +215,8 @@ const cmd = [
   '--outfile',
   outfile,
   '--minify',
-  '--bytecode',
+  // --bytecode requires --compile; skip it for plain bundles.
+  ...(bundleOnly ? [] : ['--bytecode']),
   '--packages',
   'bundle',
   '--conditions',

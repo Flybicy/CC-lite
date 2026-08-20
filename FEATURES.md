@@ -26,6 +26,17 @@ externalized `@ant/*` packages.
   bundle from this document, minus `CHICAGO_MCP`. That flag still compiles,
   but the external binary does not boot cleanly with it because startup
   reaches the missing `@ant/computer-use-mcp` runtime package.
+- `bun run build:bundle:cclite`
+  Builds `./cclite.js` — a plain JS bundle rather than a compiled single-file
+  binary, with the embedding stack (`@huggingface/transformers`,
+  `onnxruntime-*`, `sharp`) left external. This is what the installers ship:
+  `bun build --compile` cannot `dlopen()` ONNX Runtime's native library out
+  of the executable's virtual filesystem, so the compiled variants silently
+  degrade semantic search to the approximate fallback. The bundle resolves
+  those packages from a sibling `node_modules` at runtime instead.
+- `bun run verify:embeddings`
+  Downloads (once) and smoke-tests the local semantic embedding model,
+  asserting that a related sentence outranks an unrelated one.
 
 ## Default Build Flags
 

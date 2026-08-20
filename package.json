@@ -17,6 +17,9 @@
     "build:dev": "bun run ./scripts/build.ts --dev",
     "build:dev:full": "bun run ./scripts/build.ts --dev --feature-set=dev-full",
     "build:dev:cclite": "bun run ./scripts/build.ts --dev --feature-set=cclite",
+    "build:bundle:cclite": "bun run ./scripts/build.ts --dev --bundle --feature-set=cclite",
+    "verify:embeddings": "bun run ./scripts/prefetch-embedding-model.ts",
+    "build:bundle:verify": "bun build ./scripts/prefetch-embedding-model.ts --target bun --format esm --outfile ./verify-embeddings.js --minify --packages bundle --conditions bun --external @huggingface/transformers --external onnxruntime-node --external onnxruntime-web --external sharp",
     "compile": "bun run ./scripts/build.ts --compile",
     "dev": "bun run ./src/entrypoints/cli.tsx"
   },

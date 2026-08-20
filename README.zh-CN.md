@@ -45,13 +45,24 @@ curl -fsSL https://raw.githubusercontent.com/Flybicy/CC-lite/main/install.sh | b
 irm https://raw.githubusercontent.com/Flybicy/CC-lite/main/install.ps1 | iex
 ```
 
-安装脚本会**先自动装齐所有依赖，再拉源码构建**：
-1. 依赖：**git、Bun（>=1.3.11）、ripgrep** 全自动安装
+安装脚本会**先自动装齐所有依赖，再拉源码构建，最后把语义小模型一步装好**：
+
+1. **依赖优先**：**git、Bun（>=1.3.11）、ripgrep** 全自动安装
    （Linux: apt/dnf/yum/pacman/zypper/apk；macOS: brew；
    Windows: winget/scoop/choco，Git Bash 下还可直接下载官方 rg 压缩包）
-2. 克隆源码 → `bun install`（含 `@huggingface/transformers` 本地语义模型运行时）
-   → 编译单文件可执行程序
-3. 安装为 `cclite`（及 `cclite-bypass`）到 `~/.local/bin`，自动尝试加入 PATH
+2. **拉源码 + 构建**：克隆仓库 → `bun install` → 构建 JS bundle `cclite.js`
+   （解锁全部实验性功能）
+3. **语义小模型一步到位**：把嵌入运行时（Transformers.js + ONNX Runtime）安装到
+   `~/.local/lib/cclite`，按当前平台裁剪（约 130MB），**预下载 ~23MB 模型并跑一次
+   真实相似度自检**，安装过程中你就能看到"语义搜索已验证"。无需任何手动配置，
+   首次使用也不会卡在下载上。
+4. **命令 + PATH**：安装 `cclite`、`cclite-bypass`、`cclite-verify-embeddings`
+   到 `~/.local/bin`，并自动把该目录写入 `~/.bashrc` / `~/.zshrc` / `~/.profile`。
+
+> **为什么不是单文件二进制？** `bun build --compile` 会把 ONNX Runtime 的原生
+> `.node` 库放进可执行文件的虚拟文件系统，而 `dlopen()` 无法从那里加载 ——
+> 所以单文件二进制只能静默退回**近似**兜底。改为分发 `cclite.js` + 一个小运行时
+> 目录，才能让**真正的**语义模型工作。启动开销可忽略（约 0.5 秒）。
 
 > 已装好 Bun + ripgrep 也可直接源码构建，见下文[构建](#构建)。
 
@@ -76,7 +87,15 @@ bun run build            # 生产二进制 ./cclite-cli（仅 VOICE_MODE）
 bun run build:dev        # 开发版 ./cclite-cli-dev
 bun run build:dev:full   # 解锁全部实验性功能 ./cclite-cli-dev
 bun run compile          # 输出到 ./dist/cclite-cli
+
+bun run build:bundle:cclite   # ./cclite.js —— 安装器实际分发的形态
+                              # 保持嵌入依赖外置，真语义模型唯一可用的构建
+bun run verify:embeddings      # 端到端验证本地语义模型（首次会下载）
 ```
+
+> 单文件编译产物（`cclite-cli` / `cclite-cli-dev`）无法从虚拟文件系统加载
+> ONNX Runtime 原生库，语义搜索在那里会退回近似兜底。要真语义请用 bundle
+> 构建或 `bun run dev`。
 
 按需单独开启某个开关：
 ```bash
@@ -88,10 +107,12 @@ bun run ./scripts/build.ts --feature=ULTRAPLAN --feature=ULTRATHINK
 ## 运行
 
 ```bash
-cclite                # 已安装版本（交互式 REPL，默认）
-cclite-bypass         # 以 bypassPermissions 权限模式运行
-./cclite-cli          # 或直接用构建产物
-bun run dev             # 或从源码运行（启动较慢）
+cclite                    # 已安装版本（交互式 REPL，默认）
+cclite-bypass             # 以 bypassPermissions 权限模式运行
+cclite-verify-embeddings  # 复检本地语义模型
+bun ./cclite.js           # 自己构建的 bundle（真语义搜索）
+./cclite-cli-dev          # 单文件编译产物（语义退回近似）
+bun run dev               # 或从源码运行（启动较慢）
 ```
 
 快速测试：
@@ -132,11 +153,12 @@ Advisor 通过 `ReadConversationLog` 工具读取主代理对话历史，支持�
 1. **local-semantic（默认，真语义）** —— 通过
    [`@huggingface/transformers`](https://huggingface.co/docs/transformers.js)
    **进程内**运行真实嵌入模型（ONNX/WASM，mean-pool + L2 归一化），标记为
-   `local-semantic:<model>`。`bun install`（或一行安装器）自动装好运行时
-   —— **克隆、安装、完成**。首次使用时模型自动下载一次到磁盘缓存，之后完全离线。
-   向量还有第二层磁盘缓存（每模型一个 JSONL），未变化的消息永不重复嵌入，重启也不丢。
-   > 注意：`bun run compile` 的独立二进制无法内嵌 transformers 包，会清晰报错；
-   > 此时设 `CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING=0` 即可退回近似兜底。
+   `local-semantic:<model>`。**安装器已经全部配好**：装运行时、预下载模型、
+   跑真实推理自检，全部在安装过程内完成，无需任何配置。源码运行只需
+   `bun install`。一次性 ~23MB 下载之后完全离线。向量还有第二层磁盘缓存
+   （每模型一个 JSONL），未变化的消息永不重复嵌入，重启也不丢。
+   > 注意：`bun run compile` 的单文件二进制无法从虚拟文件系统加载 ONNX Runtime
+   > 原生库，语义会退回近似兜底 —— 这正是安装器改为分发 `cclite.js` bundle 的原因。
 2. **local-approximate（兜底）** —— 确定性的哈希词袋向量器，**不是**真语义；
    只提供 BM25 之上的模糊子词匹配。始终标记为 `local-approximate`，
    Advisor 看到该标记时会偏向 keyword 模式以求精确。
@@ -165,6 +187,30 @@ Advisor 通过 `ReadConversationLog` 工具读取主代理对话历史，支持�
 export CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING_MODEL="Xenova/bge-small-zh-v1.5"
 # 首次语义搜索自动下载 ~23MB，之后完全离线
 ```
+
+#### 如何确认语义模型正常工作
+
+安装器已经自动跑过这个检查并打印结果，你也可以随时复检：
+
+```bash
+cclite-verify-embeddings      # 随 cclite 一起安装
+# 或在源码目录下：
+bun run verify:embeddings
+```
+
+正常输出：
+
+```
+[+] Model ready in 1.2s - backend: local-semantic:Xenova/all-MiniLM-L6-v2
+    dimensions: 384
+    similarity  related: 0.659  unrelated: 0.089
+[+] Semantic search verified: real embeddings are working
+```
+
+该检查会嵌入「一个查询 + 一句相关 + 一句无关」，并断言相关分明显高于无关分 ——
+近似兜底通不过这个断言。第二个判断依据：Advisor 的搜索输出始终打印
+`[embedding backend: ...]`，真模型工作时显示 `local-semantic:<模型名>`，
+否则显示 `local-approximate`。
 
 ### ReadConversationLog —— 跨重启的项目记忆
 

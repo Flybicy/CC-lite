@@ -10,7 +10,7 @@ All Anthropic OAuth stripped. All telemetry stripped. All injected security-prom
 curl -fsSL https://raw.githubusercontent.com/Flybicy/CC-lite/main/install.sh | bash
 ```
 
-> One command installs all dependencies first (git, Bun >= 1.3.11, ripgrep), then clones, builds with all features enabled, installs `cclite`, and creates a `cclite-bypass` launcher that starts in bypass permission mode. See [API Configuration](#api-configuration) for API setup.
+> One command installs all dependencies first (git, Bun >= 1.3.11, ripgrep), then clones the source, builds, provisions the **local semantic embedding runtime and pre-downloads the model (~23 MB)**, and installs `cclite`, `cclite-bypass` (bypass permission mode), and `cclite-verify-embeddings` (re-checks the semantic model). See [API Configuration](#api-configuration) for API setup.
 
 ### Dev (bleeding edge)
 
@@ -18,7 +18,7 @@ curl -fsSL https://raw.githubusercontent.com/Flybicy/CC-lite/main/install.sh | b
 curl -fsSL https://raw.githubusercontent.com/Flybicy/CC-lite/main/install_dev.sh | bash
 ```
 
-> Installs from the `dev` branch as `cclite` (and `cclite-bypass`). Same binary names as the stable installer — only the source branch differs.
+> Installs from the `dev` branch as `cclite` (plus `cclite-bypass` and `cclite-verify-embeddings`). Same command names as the stable installer — only the source branch differs.
 
 ---
 
@@ -134,21 +134,38 @@ git stash pop                       # reapply
 curl -fsSL https://raw.githubusercontent.com/Flybicy/CC-lite/main/install.sh | bash
 ```
 
-One command does everything: it installs **all dependencies first** (git,
-Bun >= 1.3.11, and ripgrep -- via your system package manager: apt / dnf /
-yum / pacman / zypper / apk / brew; on Windows Git Bash: scoop / choco /
-winget or a direct release download), then clones the repo source, runs
-`bun install` (project dependencies incl. the local-semantic embedding
-runtime), builds the binary `cclite-cli-dev` (all experimental features
-enabled), installs it as `cclite`, and creates a `cclite-bypass`
-launcher in `~/.local/bin`.
+One command does everything, in this order:
+
+1. **Dependencies first** -- git, Bun >= 1.3.11, and ripgrep, via your system
+   package manager (apt / dnf / yum / pacman / zypper / apk / brew; on Windows
+   Git Bash: scoop / choco / winget or a direct release download).
+2. **Clone + build** -- clones the repo source, runs `bun install`, and builds
+   the JS bundle `cclite.js` with all experimental features enabled.
+3. **Semantic model, in one step** -- installs the embedding runtime
+   (Transformers.js + ONNX Runtime) into `~/.local/lib/cclite`, trims it to
+   the host platform (~130 MB), **pre-downloads the ~23 MB model, and runs a
+   real similarity smoke test** so you see semantic search verified during
+   install. No manual setup, no first-run download stall.
+4. **Launchers + PATH** -- installs `cclite`, `cclite-bypass`, and
+   `cclite-verify-embeddings` into `~/.local/bin`, and adds that directory to
+   your shell profiles (`~/.bashrc` / `~/.zshrc` / `~/.profile`) so the
+   command works immediately in new terminals.
+
+> **Why a bundle instead of one compiled binary?** `bun build --compile`
+> places ONNX Runtime's native `.node` library inside the executable's
+> virtual filesystem, where `dlopen()` cannot load it -- so a single-file
+> binary can only ever use the *approximate* fallback, silently. Shipping
+> `cclite.js` plus a small runtime directory is what makes the **real**
+> semantic model work. Startup cost is negligible (~0.5s).
 
 ### Windows (native)
 
 CC-lite builds and runs natively on Windows (no WSL needed). Use the
-PowerShell installer, which installs **all dependencies first** (git, Bun,
-and ripgrep -- via winget/choco/scoop), then clones the repo, runs
-`bun install`, and builds a `cclite-cli-dev.exe`:
+PowerShell installer, which follows the same order: **all dependencies first**
+(git, Bun, and ripgrep -- via winget/choco/scoop), then clone + `bun install`
++ build the bundle, then provision the semantic embedding runtime and
+pre-download/verify the model, then install `cclite.cmd`,
+`cclite-bypass.cmd`, and `cclite-verify-embeddings.cmd`:
 
 ```powershell
 irm https://raw.githubusercontent.com/Flybicy/CC-lite/main/install.ps1 | iex
@@ -198,6 +215,13 @@ bun run build:dev:full
 
 # Compiled build (alternative output path) -- produces ./dist/cclite-cli
 bun run compile
+
+# Bundle build -- produces ./cclite.js, the variant the installers ship.
+# Keeps the embedding stack external so the REAL semantic model works.
+bun run build:bundle:cclite
+
+# Verify the local semantic model end-to-end (downloads it on first run)
+bun run verify:embeddings
 ```
 
 ### Build variants
@@ -208,6 +232,12 @@ bun run compile
 | `bun run build:dev` | `./cclite-cli-dev` | `VOICE_MODE` only | Dev version stamp |
 | `bun run build:dev:full` | `./cclite-cli-dev` | All 45+ experimental flags | The full unlock build |
 | `bun run compile` | `./dist/cclite-cli` | `VOICE_MODE` only | Alternative output directory |
+| `bun run build:bundle:cclite` | `./cclite.js` | cclite feature set | **What the installers ship.** Needs a sibling `node_modules` for the embedding stack; the only variant where the real semantic model runs |
+
+> The compiled single-file variants (`cclite-cli`, `cclite-cli-dev`) cannot
+> load ONNX Runtime's native library out of their virtual filesystem, so
+> semantic search degrades to the approximate fallback there. Use the bundle
+> build (or `bun run dev`) for true semantic search.
 
 ### Individual feature flags
 
@@ -226,25 +256,28 @@ bun run ./scripts/build.ts --dev --feature=BRIDGE_MODE
 ## Run
 
 ```bash
-# Run the installed binary
+# Run the installed command
 cclite
 
-# Run the installed binary in bypass permission mode
+# Run in bypass permission mode
 cclite-bypass
 
-# Or the built binary
-./cclite-cli
+# Re-check the local semantic embedding model
+cclite-verify-embeddings
 
-# Or the dev binary
+# Or the bundle you built yourself (real semantic search)
+bun ./cclite.js
+
+# Or a compiled binary (semantic search falls back to approximate)
 ./cclite-cli-dev
 
-# Or run from source without compiling (slower startup)
+# Or run from source without building (slower startup)
 bun run dev
 
 # See [API Configuration](#api-configuration) for API setup.
 ```
 
-`cclite-bypass` is installed by `install.sh`. It exports `IS_SANDBOX=1` and runs the installed `cclite` binary with `--permission-mode bypassPermissions`.
+`cclite-bypass` is installed by `install.sh`. It exports `IS_SANDBOX=1` and runs `cclite` with `--permission-mode bypassPermissions`. `cclite-verify-embeddings` re-runs the local semantic model check (see [Verifying the semantic model](#verifying-the-semantic-model)).
 
 ### Quick test
 
@@ -317,15 +350,15 @@ machine. Two backends, resolved in this priority order:
    running **in-process** via
    [`@huggingface/transformers`](https://huggingface.co/docs/transformers.js)
    (ONNX/WASM, mean-pooled + L2-normalized), labeled
-   `local-semantic:<model>`. The package is a normal dependency, so
-   `bun install` (or the one-line installer) brings it in automatically --
-   **clone, install, done**. On first use the model downloads itself once
-   into the on-disk cache; afterwards everything works fully offline.
-   Vectors are additionally cached on disk (JSONL per model), so unchanged
-   messages are never re-embedded, even across restarts.
-   Note: the standalone `--compile` binary cannot embed the transformers
-   package; there it degrades with a clear error -- set
-   `CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING=0` in that case.
+   `local-semantic:<model>`. **The installer sets this up completely**: it
+   provisions the runtime, pre-downloads the model, and verifies real
+   inference before finishing -- nothing to configure. From source,
+   `bun install` is enough. Everything after the one-time ~23 MB download
+   works fully offline. Vectors are additionally cached on disk (JSONL per
+   model), so unchanged messages are never re-embedded, even across restarts.
+   Note: the standalone `--compile` binary cannot load ONNX Runtime's native
+   library from its virtual filesystem, so semantic search degrades there --
+   this is exactly why the installers ship the `cclite.js` bundle instead.
 2. **local-approximate** (fallback) -- a deterministic, offline, free,
    hashed bag-of-features vectorizer. It is **NOT** true semantics; it
    provides fuzzy sub-word matching on top of what BM25 already does. Always
@@ -362,6 +395,33 @@ export CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING_MODEL="Xenova/bge-small-zh-v1.5"
 If the model tier is unavailable (e.g. inside the compiled binary without
 the opt-out), semantic/hybrid modes report a clear error and hybrid degrades
 to keyword-only; keyword mode is always available regardless.
+
+#### Verifying the semantic model
+
+The installer already runs this check and prints the result, but you can
+re-run it any time:
+
+```bash
+cclite-verify-embeddings          # installed alongside cclite
+# or, from a source checkout:
+bun run verify:embeddings
+```
+
+Expected output on a healthy install:
+
+```
+[+] Model ready in 1.2s - backend: local-semantic:Xenova/all-MiniLM-L6-v2
+    dimensions: 384
+    similarity  related: 0.659  unrelated: 0.089
+[+] Semantic search verified: real embeddings are working
+```
+
+The check embeds a query plus one related and one unrelated sentence and
+asserts the related score clearly outranks the unrelated one -- the
+approximate fallback cannot pass it. A second source of truth: the Advisor's
+search output always prints `[embedding backend: ...]`, which reads
+`local-semantic:<model>` when the real model is active and
+`local-approximate` when it is not.
 
 ### ReadConversationLog -- project memory across restarts
 

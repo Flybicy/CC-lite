@@ -22,7 +22,11 @@ RESET='\033[0m'
 
 REPO="https://github.com/Flybicy/CC-lite.git"
 INSTALL_DIR="$HOME/.local/bin"
+# Runtime home for the JS bundle + the local semantic embedding stack.
+LIB_DIR="$HOME/.local/lib/cclite"
 BUN_MIN_VERSION="1.3.11"
+# Pinned: must match the repo's package.json/bun.lock.
+TRANSFORMERS_VERSION="3.8.1"
 
 info()  { printf "${CYAN}[*]${RESET} %s\n" "$*"; }
 ok()    { printf "${GREEN}[+]${RESET} %s\n" "$*"; }
@@ -134,28 +138,109 @@ install_deps() {
   ok "Dependencies installed"
 }
 
-build_binary() {
-  info "Building cclite..."
+build_bundle() {
+  info "Building cclite (JS bundle)..."
   cd "$BUILD_DIR" || fail "Cannot enter $BUILD_DIR"
-  bun run build:dev:cclite
-  local binary="$BUILD_DIR/cclite-cli-dev"
-  ok "Binary built: $binary"
+  bun run build:bundle:cclite
+  [ -f "$BUILD_DIR/cclite.js" ] || fail "Build did not produce cclite.js."
+  bun run build:bundle:verify || warn "Could not build the embeddings verifier (non-fatal)"
+  ok "Bundle built: $BUILD_DIR/cclite.js"
 }
 
-install_bypass_launcher() {
-  local launcher="$INSTALL_DIR/cclite-bypass"
+install_lib() {
+  info "Installing runtime to $LIB_DIR..."
+  mkdir -p "$LIB_DIR"
+  cp "$BUILD_DIR/cclite.js" "$LIB_DIR/cclite.js"
+  [ -f "$BUILD_DIR/verify-embeddings.js" ] &&
+    cp "$BUILD_DIR/verify-embeddings.js" "$LIB_DIR/verify-embeddings.js"
 
-  cat > "$launcher" <<'EOF'
+  # Minimal manifest: only the embedding stack is resolved at runtime; every
+  # other dependency is already inlined in the bundle.
+  cat > "$LIB_DIR/package.json" <<EOF
+{
+  "name": "cclite-runtime",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@huggingface/transformers": "${TRANSFORMERS_VERSION}"
+  }
+}
+
+trim_lib() {
+  local before after
+  before="$(du -sm "$LIB_DIR/node_modules" 2>/dev/null | cut -f1)"
+  find "$LIB_DIR/node_modules" -name "*.map" -delete 2>/dev/null || true
+  rm -rf "$LIB_DIR/node_modules/@types" 2>/dev/null || true
+  rm -rf "$LIB_DIR/node_modules/onnxruntime-web" 2>/dev/null || true
+  local napi="$LIB_DIR/node_modules/onnxruntime-node/bin/napi-v3"
+  if [ -d "$napi" ]; then
+    local keep=""
+    case "$OS" in
+      linux)   keep="linux"  ;;
+      macos)   keep="darwin" ;;
+      windows) keep="win32"  ;;
+    esac
+    local d
+    for d in "$napi"/*; do
+      [ -d "$d" ] || continue
+      [ "$(basename "$d")" = "$keep" ] || rm -rf "$d"
+    done
+  fi
+  after="$(du -sm "$LIB_DIR/node_modules" 2>/dev/null | cut -f1)"
+  if [ -n "$before" ] && [ -n "$after" ]; then
+    info "Trimmed runtime: ${before}MB -> ${after}MB"
+  fi
+}
+
+prefetch_model() {
+  [ -f "$LIB_DIR/verify-embeddings.js" ] || return 0
+  info "Downloading the semantic model (~23MB, one time) and verifying..."
+  cd "$LIB_DIR" || return 0
+  if bun ./verify-embeddings.js; then
+    ok "Semantic search ready"
+  else
+    warn "Model prefetch/verification failed - semantic search will fall back"
+    warn "to approximate matching. Re-run later: cclite-verify-embeddings"
+  fi
+}
+
+install_launchers() {
+  local main="$INSTALL_DIR/cclite"
+  # No `cd` here: cclite must run against the user's current directory.
+  # Bun resolves node_modules from the entry script's location, so the
+  # embedding stack in $LIB_DIR is found regardless of cwd.
+  cat > "$main" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
-
-SCRIPT_DIR="$(cd -- "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export IS_SANDBOX=1
-exec "$SCRIPT_DIR/cclite" --permission-mode bypassPermissions "$@"
+export BUN_INSTALL="\${BUN_INSTALL:-\$HOME/.bun}"
+export PATH="\$BUN_INSTALL/bin:\$PATH"
+exec bun "${LIB_DIR}/cclite.js" "\$@"
 EOF
+  chmod +x "$main" 2>/dev/null || true
+  ok "Installed: $main"
 
-  chmod +x "$launcher"
-  ok "Installed: $launcher"
+  local bypass="$INSTALL_DIR/cclite-bypass"
+  cat > "$bypass" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+export IS_SANDBOX=1
+exec "${INSTALL_DIR}/cclite" --permission-mode bypassPermissions "\$@"
+EOF
+  chmod +x "$bypass" 2>/dev/null || true
+  ok "Installed: $bypass"
+
+  if [ -f "$LIB_DIR/verify-embeddings.js" ]; then
+    local verify="$INSTALL_DIR/cclite-verify-embeddings"
+    cat > "$verify" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+export BUN_INSTALL="\${BUN_INSTALL:-\$HOME/.bun}"
+export PATH="\$BUN_INSTALL/bin:\$PATH"
+exec bun "${LIB_DIR}/verify-embeddings.js" "\$@"
+EOF
+    chmod +x "$verify" 2>/dev/null || true
+    ok "Installed: $verify"
+  fi
 }
 
 # Ensure INSTALL_DIR is on PATH: persist it to the user's shell profiles
@@ -196,11 +281,9 @@ add_to_path() {
 install_binary() {
   mkdir -p "$INSTALL_DIR"
 
-  cp "$BUILD_DIR/cclite-cli-dev" "$INSTALL_DIR/cclite"
-  chmod +x "$INSTALL_DIR/cclite"
-  ok "Installed: $INSTALL_DIR/cclite"
-
-  install_bypass_launcher
+  install_lib
+  install_launchers
+  prefetch_model
 
   rm -rf "$BUILD_DIR"
   ok "Build cache cleaned"
@@ -224,7 +307,7 @@ echo ""
 
 clone_repo
 install_deps
-build_binary
+build_bundle
 install_binary
 
 echo ""
@@ -234,6 +317,7 @@ printf "  ${BOLD}Run it:${RESET}\n"
 printf "    ${CYAN}cclite${RESET}                           # interactive REPL\n"
 printf "    ${CYAN}cclite-bypass${RESET}                    # interactive REPL with bypassPermissions\n"
 printf "    ${CYAN}cclite -p \"your prompt\"${RESET}          # one-shot mode\n"
+printf "    ${CYAN}cclite-verify-embeddings${RESET}          # re-check the local semantic model\n"
 echo ""
 printf "  ${BOLD}Set your API key:${RESET}\n"
 printf "    ${CYAN}export ANTHROPIC_API_KEY=\"sk-ant-...\"${RESET}\n"
