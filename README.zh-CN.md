@@ -51,7 +51,7 @@ irm https://raw.githubusercontent.com/Flybicy/CC-lite/main/install.ps1 | iex
    Windows: winget/scoop/choco，Git Bash 下还可直接下载官方 rg 压缩包）
 2. 克隆源码 → `bun install`（含 `@huggingface/transformers` 本地语义模型运行时）
    → 编译单文件可执行程序
-3. 安装为 `cc-lite`（及 `cc-lite-bypass`）到 `~/.local/bin`，自动尝试加入 PATH
+3. 安装为 `cclite`（及 `cclite-bypass`）到 `~/.local/bin`，自动尝试加入 PATH
 
 > 已装好 Bun + ripgrep 也可直接源码构建，见下文[构建](#构建)。
 
@@ -69,13 +69,13 @@ irm https://raw.githubusercontent.com/Flybicy/CC-lite/main/install.ps1 | iex
 
 ```bash
 git clone https://github.com/Flybicy/CC-lite.git
-cd cc-lite
+cd cclite
 bun install
 
-bun run build            # 生产二进制 ./cc-lite-cli（仅 VOICE_MODE）
-bun run build:dev        # 开发版 ./cc-lite-cli-dev
-bun run build:dev:full   # 解锁全部实验性功能 ./cc-lite-cli-dev
-bun run compile          # 输出到 ./dist/cc-lite-cli
+bun run build            # 生产二进制 ./cclite-cli（仅 VOICE_MODE）
+bun run build:dev        # 开发版 ./cclite-cli-dev
+bun run build:dev:full   # 解锁全部实验性功能 ./cclite-cli-dev
+bun run compile          # 输出到 ./dist/cclite-cli
 ```
 
 按需单独开启某个开关：
@@ -88,17 +88,17 @@ bun run ./scripts/build.ts --feature=ULTRAPLAN --feature=ULTRATHINK
 ## 运行
 
 ```bash
-cc-lite                # 已安装版本（交互式 REPL，默认）
-cc-lite-bypass         # 以 bypassPermissions 权限模式运行
-./cc-lite-cli          # 或直接用构建产物
+cclite                # 已安装版本（交互式 REPL，默认）
+cclite-bypass         # 以 bypassPermissions 权限模式运行
+./cclite-cli          # 或直接用构建产物
 bun run dev             # 或从源码运行（启动较慢）
 ```
 
 快速测试：
 ```bash
-cc-lite -p "what files are in this directory?"
-cc-lite -p "scan this repo and summarize risky scripts"   # bypass 权限模式
-cc-lite --model claude-sonnet-4-6-20250514                # 指定模型
+cclite -p "what files are in this directory?"
+cclite -p "scan this repo and summarize risky scripts"   # bypass 权限模式
+cclite --model claude-sonnet-4-6-20250514                # 指定模型
 ```
 
 ---

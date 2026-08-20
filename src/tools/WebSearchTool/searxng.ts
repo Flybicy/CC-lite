@@ -222,6 +222,6 @@ function getSearxngUserAgent(): string {
   try {
     return getUserAgent()
   } catch {
-    return 'cc-lite-searxng'
+    return 'cclite-searxng'
   }
 }

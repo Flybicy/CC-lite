@@ -16,13 +16,13 @@ externalized `@ant/*` packages.
 ## Build Variants
 
 - `bun run build`
-  Builds the regular external binary at `./cc-lite-cli`.
+  Builds the regular external binary at `./cclite-cli`.
 - `bun run compile`
-  Builds the regular external binary at `./dist/cc-lite-cli`.
+  Builds the regular external binary at `./dist/cclite-cli`.
 - `bun run build:dev`
-  Builds `./cc-lite-cli-dev` with a dev-stamped version and experimental GrowthBook key.
+  Builds `./cclite-cli-dev` with a dev-stamped version and experimental GrowthBook key.
 - `bun run build:dev:full`
-  Builds `./cc-lite-cli-dev` with the entire current "Working Experimental Features"
+  Builds `./cclite-cli-dev` with the entire current "Working Experimental Features"
   bundle from this document, minus `CHICAGO_MCP`. That flag still compiles,
   but the external binary does not boot cleanly with it because startup
   reaches the missing `@ant/computer-use-mcp` runtime package.
@@ -81,7 +81,7 @@ explicitly called out as default-on.
 - `AGENT_TRIGGERS`
   Enables local cron/trigger tools and bundled trigger-related skills.
 - `AGENT_TRIGGERS_REMOTE`
-  Enables the remote trigger tool path. NOT included in the full/cc-lite
+  Enables the remote trigger tool path. NOT included in the full/cclite
   feature sets: the remote trigger tool and its bundled skill depend on
   claude.ai OAuth + remote CCR sessions, which this fork strips entirely.
 - `BUILTIN_EXPLORE_PLAN_AGENTS`
@@ -106,13 +106,13 @@ explicitly called out as default-on.
 - `BRIDGE_MODE`
   Enables Remote Control / REPL bridge command and entitlement paths.
 - `CCR_AUTO_CONNECT`
-  Enables the CCR auto-connect default path. NOT in the full/cc-lite feature
+  Enables the CCR auto-connect default path. NOT in the full/cclite feature
   sets: dead without claude.ai OAuth (stripped in this fork).
 - `CCR_MIRROR`
-  Enables outbound-only CCR mirror sessions. NOT in the full/cc-lite feature
+  Enables outbound-only CCR mirror sessions. NOT in the full/cclite feature
   sets: dead without claude.ai OAuth (stripped in this fork).
 - `CCR_REMOTE_SETUP`
-  Enables the remote setup command path. NOT in the full/cc-lite feature
+  Enables the remote setup command path. NOT in the full/cclite feature
   sets: its command module (`commands/remote-setup`) was removed with the
   rest of the remote CCR session code; enabling the flag breaks the build.
 - `CHICAGO_MCP`
@@ -188,7 +188,7 @@ have meaningful runtime caveats:
   Bundles cleanly, but is gated at runtime on claude.ai OAuth plus GrowthBook
   entitlement checks. Note: claude.ai OAuth has been stripped in CC-lite, so
   this feature is unavailable at runtime. (`CCR_AUTO_CONNECT`, `CCR_MIRROR`,
-  and `CCR_REMOTE_SETUP` were additionally removed from the full/cc-lite
+  and `CCR_REMOTE_SETUP` were additionally removed from the full/cclite
   feature sets - see their entries above.)
 - `KAIROS_BRIEF`, `KAIROS_CHANNELS`
   Bundle cleanly, but they do not restore the full missing assistant stack.

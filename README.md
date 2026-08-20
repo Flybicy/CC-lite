@@ -10,7 +10,7 @@ All Anthropic OAuth stripped. All telemetry stripped. All injected security-prom
 curl -fsSL https://raw.githubusercontent.com/Flybicy/CC-lite/main/install.sh | bash
 ```
 
-> One command installs all dependencies first (git, Bun >= 1.3.11, ripgrep), then clones, builds with all features enabled, installs `cc-lite`, and creates a `cc-lite-bypass` launcher that starts in bypass permission mode. See [API Configuration](#api-configuration) for API setup.
+> One command installs all dependencies first (git, Bun >= 1.3.11, ripgrep), then clones, builds with all features enabled, installs `cclite`, and creates a `cclite-bypass` launcher that starts in bypass permission mode. See [API Configuration](#api-configuration) for API setup.
 
 ### Dev (bleeding edge)
 
@@ -18,7 +18,7 @@ curl -fsSL https://raw.githubusercontent.com/Flybicy/CC-lite/main/install.sh | b
 curl -fsSL https://raw.githubusercontent.com/Flybicy/CC-lite/main/install_dev.sh | bash
 ```
 
-> Installs from the `dev` branch as `cc-lite` (and `cc-lite-bypass`). Same binary names as the stable installer — only the source branch differs.
+> Installs from the `dev` branch as `cclite` (and `cclite-bypass`). Same binary names as the stable installer — only the source branch differs.
 
 ---
 
@@ -104,9 +104,9 @@ See [FEATURES.md](FEATURES.md) for the full audit of all 88 flags and their stat
 This repo ships ready for GitHub. To publish your own copy:
 
 ```bash
-# 1) Create an empty repo on GitHub (e.g. github.com/you/cc-lite), then:
-cd cc-lite
-git remote set-url origin https://github.com/you/cc-lite.git
+# 1) Create an empty repo on GitHub (e.g. github.com/you/cclite), then:
+cd cclite
+git remote set-url origin https://github.com/you/cclite.git
 git push -u origin main
 ```
 
@@ -115,7 +115,7 @@ To pull updates and rebuild:
 ```bash
 git pull --ff-only                  # fast-forward only; never auto-merge
 bun install                         # sync deps if package.json/lock changed
-bun run build:dev:cc-lite          # rebuild cc-lite-cli-dev
+bun run build:dev:cclite          # rebuild cclite-cli-dev
 ```
 
 If you have local changes and want to re-sync with upstream cleanly:
@@ -139,8 +139,8 @@ Bun >= 1.3.11, and ripgrep -- via your system package manager: apt / dnf /
 yum / pacman / zypper / apk / brew; on Windows Git Bash: scoop / choco /
 winget or a direct release download), then clones the repo source, runs
 `bun install` (project dependencies incl. the local-semantic embedding
-runtime), builds the binary `cc-lite-cli-dev` (all experimental features
-enabled), installs it as `cc-lite`, and creates a `cc-lite-bypass`
+runtime), builds the binary `cclite-cli-dev` (all experimental features
+enabled), installs it as `cclite`, and creates a `cclite-bypass`
 launcher in `~/.local/bin`.
 
 ### Windows (native)
@@ -148,7 +148,7 @@ launcher in `~/.local/bin`.
 CC-lite builds and runs natively on Windows (no WSL needed). Use the
 PowerShell installer, which installs **all dependencies first** (git, Bun,
 and ripgrep -- via winget/choco/scoop), then clones the repo, runs
-`bun install`, and builds a `cc-lite-cli-dev.exe`:
+`bun install`, and builds a `cclite-cli-dev.exe`:
 
 ```powershell
 irm https://raw.githubusercontent.com/Flybicy/CC-lite/main/install.ps1 | iex
@@ -182,21 +182,21 @@ curl -fsSL https://bun.sh/install | bash
 ```bash
 # Clone the repo
 git clone https://github.com/Flybicy/CC-lite.git
-cd cc-lite
+cd cclite
 
 # Install dependencies
 bun install
 
-# Standard build -- produces ./cc-lite-cli
+# Standard build -- produces ./cclite-cli
 bun run build
 
 # Dev build -- dev version stamp, experimental GrowthBook key
 bun run build:dev
 
-# Dev build with ALL experimental features enabled -- produces ./cc-lite-cli-dev
+# Dev build with ALL experimental features enabled -- produces ./cclite-cli-dev
 bun run build:dev:full
 
-# Compiled build (alternative output path) -- produces ./dist/cc-lite-cli
+# Compiled build (alternative output path) -- produces ./dist/cclite-cli
 bun run compile
 ```
 
@@ -204,10 +204,10 @@ bun run compile
 
 | Command | Output | Features | Notes |
 |---|---|---|---|
-| `bun run build` | `./cc-lite-cli` | `VOICE_MODE` only | Production-like binary |
-| `bun run build:dev` | `./cc-lite-cli-dev` | `VOICE_MODE` only | Dev version stamp |
-| `bun run build:dev:full` | `./cc-lite-cli-dev` | All 45+ experimental flags | The full unlock build |
-| `bun run compile` | `./dist/cc-lite-cli` | `VOICE_MODE` only | Alternative output directory |
+| `bun run build` | `./cclite-cli` | `VOICE_MODE` only | Production-like binary |
+| `bun run build:dev` | `./cclite-cli-dev` | `VOICE_MODE` only | Dev version stamp |
+| `bun run build:dev:full` | `./cclite-cli-dev` | All 45+ experimental flags | The full unlock build |
+| `bun run compile` | `./dist/cclite-cli` | `VOICE_MODE` only | Alternative output directory |
 
 ### Individual feature flags
 
@@ -227,16 +227,16 @@ bun run ./scripts/build.ts --dev --feature=BRIDGE_MODE
 
 ```bash
 # Run the installed binary
-cc-lite
+cclite
 
 # Run the installed binary in bypass permission mode
-cc-lite-bypass
+cclite-bypass
 
 # Or the built binary
-./cc-lite-cli
+./cclite-cli
 
 # Or the dev binary
-./cc-lite-cli-dev
+./cclite-cli-dev
 
 # Or run from source without compiling (slower startup)
 bun run dev
@@ -244,28 +244,28 @@ bun run dev
 # See [API Configuration](#api-configuration) for API setup.
 ```
 
-`cc-lite-bypass` is installed by `install.sh`. It exports `IS_SANDBOX=1` and runs the installed `cc-lite` binary with `--permission-mode bypassPermissions`.
+`cclite-bypass` is installed by `install.sh`. It exports `IS_SANDBOX=1` and runs the installed `cclite` binary with `--permission-mode bypassPermissions`.
 
 ### Quick test
 
 ```bash
 # One-shot mode
-cc-lite -p "what files are in this directory?"
+cclite -p "what files are in this directory?"
 
 # One-shot mode with bypass permission mode enabled
-cc-lite-bypass -p "scan this repo and summarize risky scripts"
+cclite-bypass -p "scan this repo and summarize risky scripts"
 
 # Interactive REPL (default)
-cc-lite
+cclite
 
 # Interactive REPL (bypassPermissions)
-cc-lite-bypass
+cclite-bypass
 
 # With specific model
-cc-lite --model claude-sonnet-4-6-20250514
+cclite --model claude-sonnet-4-6-20250514
 
 # Set advisor model
-cc-lite --advisor-model claude-sonnet-4-6-20250514
+cclite --advisor-model claude-sonnet-4-6-20250514
 ```
 
 ## Advisor Tool

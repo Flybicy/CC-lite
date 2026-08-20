@@ -84,7 +84,7 @@ for (let i = 0; i < args.length; i += 1) {
       for (const feature of fullExperimentalFeatures) {
         featureSet.add(feature)
       }
-    } else if (args[i + 1] === 'cc-lite') {
+    } else if (args[i + 1] === 'cclite') {
       const ccLiteFeatures = [
         'AGENT_MEMORY_SNAPSHOT',
         'AGENT_TRIGGERS',
@@ -139,7 +139,7 @@ for (let i = 0; i < args.length; i += 1) {
 }
 const features = [...featureSet]
 
-const outfileName = dev ? 'cc-lite-cli-dev' : 'cc-lite-cli'
+const outfileName = dev ? 'cclite-cli-dev' : 'cclite-cli'
 const outfile = compile ? `./dist/${outfileName}` : `./${outfileName}`
 const buildTime = new Date().toISOString()
 const version = dev ? getDevVersion(pkg.version) : pkg.version

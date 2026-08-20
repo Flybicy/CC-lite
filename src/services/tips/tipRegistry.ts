@@ -294,7 +294,7 @@ const externalTips: Tip[] = [
   {
     id: 'continue',
     content: async () =>
-      'Run cc-lite --continue or cc-lite --resume to resume a conversation',
+      'Run cclite --continue or cclite --resume to resume a conversation',
     cooldownSessions: 10,
     isRelevant: async () => true,
   },

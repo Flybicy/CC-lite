@@ -1,5 +1,5 @@
 /**
- * AutoUpdaterWrapper stub for cc-lite
+ * AutoUpdaterWrapper stub for cclite
  * All auto-update functionality disabled
  */
 

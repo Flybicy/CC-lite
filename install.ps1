@@ -4,8 +4,8 @@
   CC-lite installer for Windows (PowerShell).
 .DESCRIPTION
   Checks for Bun and ripgrep, installs them if needed (via winget/choco/scoop/npm),
-  clones the repository, builds a cc-lite-cli-dev.exe, and installs it as
-  cc-lite.exe under a directory on PATH.
+  clones the repository, builds a cclite-cli-dev.exe, and installs it as
+  cclite.exe under a directory on PATH.
 .NOTES
   Usage (run from an elevated or normal PowerShell 5.1+ / PowerShell 7+ window):
     irm https://raw.githubusercontent.com/Flybicy/CC-lite/main/install.ps1 | iex
@@ -26,7 +26,7 @@ $ProgressPreference     = "SilentlyContinue"  # speed up Invoke-WebRequest
 
 # --- install dir ---
 if (-not $InstallDir) { $InstallDir = Join-Path $env:USERPROFILE ".local\bin" }
-if (-not $BuildDir)   { $BuildDir   = Join-Path $env:LOCALAPPDATA "cc-lite-build" }
+if (-not $BuildDir)   { $BuildDir   = Join-Path $env:LOCALAPPDATA "cclite-build" }
 
 # --- helpers ---
 function Write-Info  { param([string]$m) Write-Host "[*] $m" -ForegroundColor Cyan }
@@ -217,18 +217,18 @@ function Install-Deps {
 }
 
 function Build-Binary {
-  Write-Info "Building cc-lite..."
+  Write-Info "Building cclite..."
   Push-Location $BuildDir
   try {
     bun run build:dev:full
     if ($LASTEXITCODE -ne 0) {
-      Write-Warn "build:dev:full failed, trying build:dev:cc-lite..."
-      bun run build:dev:cc-lite
+      Write-Warn "build:dev:full failed, trying build:dev:cclite..."
+      bun run build:dev:cclite
     }
     # locate the built binary (.exe on Windows)
-    $bin = Join-Path $BuildDir "cc-lite-cli-dev.exe"
-    if (-not (Test-Path $bin)) { $bin = Join-Path $BuildDir "cc-lite-cli-dev" }
-    if (-not (Test-Path $bin)) { Write-Fail "Build did not produce cc-lite-cli-dev(.exe)." }
+    $bin = Join-Path $BuildDir "cclite-cli-dev.exe"
+    if (-not (Test-Path $bin)) { $bin = Join-Path $BuildDir "cclite-cli-dev" }
+    if (-not (Test-Path $bin)) { Write-Fail "Build did not produce cclite-cli-dev(.exe)." }
     Write-Ok "Binary built: $bin"
     return $bin
   } finally { Pop-Location }
@@ -236,7 +236,7 @@ function Build-Binary {
 
 function Install-Binary([string]$Binary) {
   New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-  $dest = Join-Path $InstallDir "cc-lite.exe"
+  $dest = Join-Path $InstallDir "cclite.exe"
   Copy-Item -Path $Binary -Destination $dest -Force
   Write-Ok "Installed: $dest"
 
@@ -281,8 +281,8 @@ function Main {
   Write-Host "  Installation complete!" -ForegroundColor Green
   Write-Host ""
   Write-Host "  Run it:" -ForegroundColor White
-  Write-Host "    cc-lite                       # interactive REPL"
-  Write-Host "    cc-lite -p `"your prompt`"            # one-shot mode"
+  Write-Host "    cclite                       # interactive REPL"
+  Write-Host "    cclite -p `"your prompt`"            # one-shot mode"
   Write-Host ""
   Write-Host "  Set your Anthropic Messages API key:" -ForegroundColor White
   Write-Host "    `$env:ANTHROPIC_API_KEY = `"sk-ant-...`""

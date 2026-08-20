@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# cc-lite installer
+# cclite installer
 # Usage: curl -fsSL https://raw.githubusercontent.com/Flybicy/CC-lite/main/install.sh | bash
 
 RED='\033[0;31m'
@@ -14,7 +14,7 @@ DIM='\033[2m'
 RESET='\033[0m'
 
 REPO="https://github.com/Flybicy/CC-lite.git"
-BUILD_DIR="$HOME/.cache/cc-lite"
+BUILD_DIR="$HOME/.cache/cclite"
 INSTALL_DIR="$HOME/.local/bin"
 BUN_MIN_VERSION="1.3.11"
 
@@ -227,19 +227,19 @@ install_deps() {
 }
 
 build_binary() {
-  info "Building cc-lite..."
+  info "Building cclite..."
   cd "$BUILD_DIR" || fail "Cannot enter $BUILD_DIR"
-  bun run build:dev:cc-lite
-  local binary="$BUILD_DIR/cc-lite-cli-dev${BIN_EXT}"
+  bun run build:dev:cclite
+  local binary="$BUILD_DIR/cclite-cli-dev${BIN_EXT}"
   if [ ! -f "$binary" ]; then
-    binary="$BUILD_DIR/cc-lite-cli-dev"
-    [ -f "$binary" ] || fail "Build did not produce cc-lite-cli-dev(.exe)."
+    binary="$BUILD_DIR/cclite-cli-dev"
+    [ -f "$binary" ] || fail "Build did not produce cclite-cli-dev(.exe)."
   fi
   ok "Binary built: $binary"
 }
 
 install_bypass_launcher() {
-  local launcher="$INSTALL_DIR/cc-lite-bypass"
+  local launcher="$INSTALL_DIR/cclite-bypass"
 
   cat > "$launcher" <<EOF
 #!/usr/bin/env bash
@@ -247,7 +247,7 @@ set -euo pipefail
 
 SCRIPT_DIR="\$(cd -- "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
 export IS_SANDBOX=1
-exec "\$SCRIPT_DIR/cc-lite${BIN_EXT}" --permission-mode bypassPermissions "\$@"
+exec "\$SCRIPT_DIR/cclite${BIN_EXT}" --permission-mode bypassPermissions "\$@"
 EOF
 
   if [ "$OS" != "windows" ]; then
@@ -271,34 +271,34 @@ add_to_path() {
     if grep -qF "$line" "$profile" 2>/dev/null; then
       present="yes"
     else
-      printf '\n# Added by cc-lite installer\n%s\n' "$line" >> "$profile"
+      printf '\n# Added by cclite installer\n%s\n' "$line" >> "$profile"
       added="$added $profile"
     fi
   done
 
   # No profile existed at all: create ~/.profile so it applies on next login.
   if [ -z "$added" ] && [ -z "$present" ]; then
-    printf '# Added by cc-lite installer\n%s\n' "$line" >> "$HOME/.profile"
+    printf '# Added by cclite installer\n%s\n' "$line" >> "$HOME/.profile"
     added=" $HOME/.profile"
   fi
 
-  # Make cc-lite usable in the current shell immediately.
+  # Make cclite usable in the current shell immediately.
   export PATH="$INSTALL_DIR:$PATH"
 
   if [ -n "$added" ]; then
     ok "Added $INSTALL_DIR to PATH in:$added"
   fi
-  warn "Open a new terminal (or run: source ~/.bashrc) to use 'cc-lite' in existing shells."
+  warn "Open a new terminal (or run: source ~/.bashrc) to use 'cclite' in existing shells."
 }
 
 install_binary() {
   mkdir -p "$INSTALL_DIR"
 
-  cp "$BUILD_DIR/cc-lite-cli-dev${BIN_EXT}" "$INSTALL_DIR/cc-lite${BIN_EXT}"
+  cp "$BUILD_DIR/cclite-cli-dev${BIN_EXT}" "$INSTALL_DIR/cclite${BIN_EXT}"
   if [ "$OS" != "windows" ]; then
-    chmod +x "$INSTALL_DIR/cc-lite${BIN_EXT}"
+    chmod +x "$INSTALL_DIR/cclite${BIN_EXT}"
   fi
-  ok "Installed: $INSTALL_DIR/cc-lite${BIN_EXT}"
+  ok "Installed: $INSTALL_DIR/cclite${BIN_EXT}"
 
   install_bypass_launcher
 
@@ -331,9 +331,9 @@ echo ""
 printf "${GREEN}${BOLD}  Installation complete!${RESET}\n"
 echo ""
 printf "  ${BOLD}Run it:${RESET}\n"
-printf "    ${CYAN}cc-lite${RESET}                           # interactive REPL\n"
-printf "    ${CYAN}cc-lite-bypass${RESET}                    # interactive REPL with bypassPermissions\n"
-printf "    ${CYAN}cc-lite -p \"your prompt\"${RESET}          # one-shot mode\n"
+printf "    ${CYAN}cclite${RESET}                           # interactive REPL\n"
+printf "    ${CYAN}cclite-bypass${RESET}                    # interactive REPL with bypassPermissions\n"
+printf "    ${CYAN}cclite -p \"your prompt\"${RESET}          # one-shot mode\n"
 echo ""
 printf "  ${BOLD}Set your Anthropic Messages API key:${RESET}\n"
 printf "    ${CYAN}export ANTHROPIC_API_KEY=\"sk-ant-...\"${RESET}\n"

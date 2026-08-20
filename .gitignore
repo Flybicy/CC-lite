@@ -1,9 +1,9 @@
 node_modules/
 dist/
-cc-lite-cli
-cc-lite-cli-dev
-cc-lite-cli.exe
-cc-lite-cli-dev.exe
+cclite-cli
+cclite-cli-dev
+cclite-cli.exe
+cclite-cli-dev.exe
 .claude/
 
 # logs & editor
