@@ -105,9 +105,10 @@ export function _resetTmuxControlModeProbeForTesting(): void {
 }
 
 /**
- * Runtime env-var check only. Ants default to on (CLAUDE_CODE_NO_FLICKER=0
- * to opt out); external users default to off (CLAUDE_CODE_NO_FLICKER=1 to
- * opt in).
+ * Runtime env-var check only. Defaults to on for everyone so the prompt
+ * input stays pinned to the bottom of the terminal (alt-screen layout);
+ * set CLAUDE_CODE_NO_FLICKER=0 to opt out and fall back to the inline
+ * scrollback layout.
  */
 export function isFullscreenEnvEnabled(): boolean {
   // Explicit user opt-out always wins.
@@ -125,7 +126,9 @@ export function isFullscreenEnvEnabled(): boolean {
     }
     return false
   }
-  return process.env.USER_TYPE === 'ant'
+  // Default on for all users: keeps the prompt input anchored to the
+  // bottom of the screen instead of trailing right below the transcript.
+  return true
 }
 
 /**
