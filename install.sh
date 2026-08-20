@@ -256,6 +256,41 @@ EOF
   ok "Installed: $launcher"
 }
 
+# Ensure INSTALL_DIR is on PATH: persist it to the user's shell profiles
+# (idempotently) and export it for the current session.
+add_to_path() {
+  case ":$PATH:" in
+    *":$INSTALL_DIR:"*) return ;;
+  esac
+
+  local line='export PATH="$HOME/.local/bin:$PATH"'
+  local added="" present=""
+  local profile
+  for profile in "$HOME/.bashrc" "$HOME/.zshrc" "$HOME/.profile"; do
+    [ -f "$profile" ] || continue
+    if grep -qF "$line" "$profile" 2>/dev/null; then
+      present="yes"
+    else
+      printf '\n# Added by cc-lite installer\n%s\n' "$line" >> "$profile"
+      added="$added $profile"
+    fi
+  done
+
+  # No profile existed at all: create ~/.profile so it applies on next login.
+  if [ -z "$added" ] && [ -z "$present" ]; then
+    printf '# Added by cc-lite installer\n%s\n' "$line" >> "$HOME/.profile"
+    added=" $HOME/.profile"
+  fi
+
+  # Make cc-lite usable in the current shell immediately.
+  export PATH="$INSTALL_DIR:$PATH"
+
+  if [ -n "$added" ]; then
+    ok "Added $INSTALL_DIR to PATH in:$added"
+  fi
+  warn "Open a new terminal (or run: source ~/.bashrc) to use 'cc-lite' in existing shells."
+}
+
 install_binary() {
   mkdir -p "$INSTALL_DIR"
 
@@ -270,13 +305,7 @@ install_binary() {
   rm -rf "$BUILD_DIR"
   ok "Build cache cleaned"
 
-  if ! echo "$PATH" | tr ':' '\n' | grep -qx "$INSTALL_DIR"; then
-    warn "$INSTALL_DIR is not on your PATH"
-    echo ""
-    printf "${YELLOW}  Add this to your shell profile (~/.bashrc, ~/.zshrc, etc.):${RESET}\n"
-    printf "${BOLD}    export PATH=\"\$HOME/.local/bin:\$PATH\"${RESET}\n"
-    echo ""
-  fi
+  add_to_path
 }
 
 # -------------------------------------------------------------------
