@@ -2,9 +2,13 @@
 // CC-lite local config WebUI server
 //
 // Serves a single-page UI bound to 127.0.0.1 only (default port 1511). There
-// is no auth layer on purpose: the listener is loopback-exclusive and the
-// process dies with the `cclite config` command. The page manages
-// ~/.claude/providers.json — provider registry + per-scope model routing.
+// is no login form on purpose: the listener is loopback-exclusive and the
+// process dies with the `cclite config` command. It does enforce a Host /
+// Origin allowlist, because without it any website the user visits could use
+// DNS rebinding to read /api/config — which contains plaintext API keys.
+//
+// The page manages ~/.claude/providers.json — the provider registry plus the
+// pro / plus / se tier bindings.
 //
 // Plain node:http so it works identically under Bun and Node runtimes.
 // ---------------------------------------------------------------------------
@@ -15,7 +19,9 @@ import {
   loadProviderConfig,
   resetProviderConfigCacheForTests,
   saveProviderConfig,
-  type ModelScope,
+  MODEL_TIERS,
+  isModelTier,
+  type ModelTier,
   type ProviderConfig,
   type ProviderEntry,
 } from '../utils/providers/providerRegistry.js'
@@ -23,7 +29,12 @@ import { CONFIG_UI_PAGE } from './page.js'
 
 const HOST = '127.0.0.1'
 
-const SCOPES: ModelScope[] = ['main', 'subagent', 'advisor']
+/** Default port, and the window scanned when it is already taken. */
+export const DEFAULT_CONFIG_PORT = 1511
+const PORT_SCAN_ATTEMPTS = 20
+
+const PROVIDERS_PREFIX = '/api/providers/'
+const FETCH_MODELS_SUFFIX = '/fetch-models'
 
 function json(res: ServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body)
@@ -47,8 +58,29 @@ async function readJsonBody(req: IncomingMessage): Promise<unknown> {
   return JSON.parse(Buffer.concat(chunks).toString('utf8'))
 }
 
-function isScope(v: unknown): v is ModelScope {
-  return typeof v === 'string' && (SCOPES as string[]).includes(v)
+/**
+ * Reject requests whose Host header is not a loopback literal, and any
+ * cross-origin request. Both are DNS-rebinding defenses: an attacker page can
+ * point a hostname it controls at 127.0.0.1, but it cannot forge these headers.
+ */
+export function isAllowedHost(hostHeader: string | undefined): boolean {
+  if (!hostHeader) return false
+  // Strip the port; IPv6 literals arrive as "[::1]:1511".
+  const host = hostHeader.startsWith('[')
+    ? hostHeader.slice(0, hostHeader.indexOf(']') + 1)
+    : hostHeader.split(':')[0]
+  return host === '127.0.0.1' || host === '[::1]' || host === 'localhost'
+}
+
+function isAllowedOrigin(origin: string | undefined): boolean {
+  // Same-origin fetches from our own page omit Origin in some runtimes; only
+  // reject when one is present and does not point back at loopback.
+  if (!origin) return true
+  try {
+    return isAllowedHost(new URL(origin).host)
+  } catch {
+    return false
+  }
 }
 
 function slugifyId(label: string): string {
@@ -71,16 +103,16 @@ function uniqueId(cfg: ProviderConfig, wanted: string): string {
 
 /**
  * Fetch the model list from a provider. OpenAI-compatible providers expose
- * GET {baseURL}/models (Bearer auth); Anthropic-compatible endpoints expose
- * GET {baseURL}/v1/models (x-api-key + anthropic-version). Returns an empty
- * list when the provider does not support listing.
+ * GET {baseURL}/models; Anthropic-compatible endpoints expose GET
+ * {baseURL}/v1/models (x-api-key + anthropic-version) — but only when the
+ * configured baseURL does not already end in /v1. Returns an empty list when
+ * the provider does not support listing.
  */
 async function fetchProviderModels(provider: ProviderEntry): Promise<string[]> {
   const base = provider.baseURL.replace(/\/+$/, '')
   const isOpenAI = provider.type === 'openai'
-  const url = isOpenAI
-    ? `${base}/models`
-    : `${base}/v1/models`
+  const url =
+    isOpenAI || /\/v1$/.test(base) ? `${base}/models` : `${base}/v1/models`
   const headers: Record<string, string> = {}
   if (isOpenAI) {
     if (provider.apiKey) headers['authorization'] = `Bearer ${provider.apiKey}`
@@ -108,6 +140,13 @@ export async function handleRequest(
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
+  const hostHeader = req.headers.host
+  if (!isAllowedHost(hostHeader) || !isAllowedOrigin(req.headers.origin)) {
+    json(res, 403, {
+      error: 'forbidden: this page is only reachable at http://127.0.0.1',
+    })
+    return
+  }
   const url = new URL(req.url ?? '/', `http://${HOST}`)
   const path = url.pathname
   try {
@@ -132,10 +171,14 @@ export async function handleRequest(
       const type = body.type === 'anthropic' ? 'anthropic' : 'openai'
       if (!label) throw new Error('label is required')
       if (!baseURL) throw new Error('baseURL is required')
+      let parsedBase: URL
       try {
-        new URL(baseURL)
+        parsedBase = new URL(baseURL)
       } catch {
         throw new Error('baseURL must be a valid URL')
+      }
+      if (parsedBase.protocol !== 'http:' && parsedBase.protocol !== 'https:') {
+        throw new Error('baseURL must use http:// or https://')
       }
       const cfg = loadProviderConfig()
       const existingId = typeof body.id === 'string' ? body.id.trim() : ''
@@ -168,24 +211,13 @@ export async function handleRequest(
       return
     }
 
-    if (req.method === 'DELETE' && path.startsWith('/api/providers/')) {
-      const id = decodeURIComponent(path.slice('/api/providers/'.length))
-      const cfg = loadProviderConfig()
-      const before = cfg.providers.length
-      cfg.providers = cfg.providers.filter(p => p.id !== id)
-      if (cfg.providers.length === before) throw new Error(`provider "${id}" not found`)
-      // Drop routing entries pointing at the deleted provider.
-      for (const scope of SCOPES) {
-        if (cfg.routing[scope]?.providerId === id) delete cfg.routing[scope]
-      }
-      saveProviderConfig(cfg)
-      json(res, 200, { ok: true })
-      return
-    }
-
-    if (req.method === 'POST' && path.endsWith('/fetch-models')) {
+    if (
+      req.method === 'POST' &&
+      path.startsWith(PROVIDERS_PREFIX) &&
+      path.endsWith(FETCH_MODELS_SUFFIX)
+    ) {
       const id = decodeURIComponent(
-        path.slice('/api/providers/'.length, -'/fetch-models'.length),
+        path.slice(PROVIDERS_PREFIX.length, -FETCH_MODELS_SUFFIX.length),
       )
       const cfg = loadProviderConfig()
       const provider = cfg.providers.find(p => p.id === id)
@@ -197,41 +229,72 @@ export async function handleRequest(
       return
     }
 
-    if (req.method === 'PUT' && path === '/api/routing') {
-      const body = (await readJsonBody(req)) as Record<string, unknown>
+    if (req.method === 'DELETE' && path.startsWith(PROVIDERS_PREFIX)) {
+      const id = decodeURIComponent(path.slice(PROVIDERS_PREFIX.length))
       const cfg = loadProviderConfig()
-      for (const scope of SCOPES) {
-        const value = body[scope]
-        if (value === null || value === undefined) {
-          delete cfg.routing[scope]
-          continue
-        }
-        if (typeof value !== 'object') throw new Error(`routing.${scope} must be an object or null`)
-        const providerId = (value as Record<string, unknown>).providerId
-        const model = (value as Record<string, unknown>).model
-        if (typeof providerId !== 'string' || !providerId.trim()) continue
-        if (typeof model !== 'string' || !model.trim()) {
-          throw new Error(`routing.${scope}.model is required`)
-        }
-        if (!cfg.providers.some(p => p.id === providerId)) {
-          throw new Error(`routing.${scope}: unknown provider "${providerId}"`)
-        }
-        cfg.routing[scope] = { providerId: providerId.trim(), model: model.trim() }
+      const before = cfg.providers.length
+      cfg.providers = cfg.providers.filter(p => p.id !== id)
+      if (cfg.providers.length === before) throw new Error(`provider "${id}" not found`)
+      // Drop tier bindings pointing at the deleted provider.
+      for (const tier of MODEL_TIERS) {
+        if (cfg.tiers[tier]?.providerId === id) delete cfg.tiers[tier]
       }
       saveProviderConfig(cfg)
-      json(res, 200, { routing: cfg.routing })
+      json(res, 200, { ok: true })
+      return
+    }
+
+    if (req.method === 'PUT' && (path === '/api/tiers' || path === '/api/routing')) {
+      const body = (await readJsonBody(req)) as Record<string, unknown>
+      const cfg = loadProviderConfig()
+      for (const key of Object.keys(body)) {
+        if (!isModelTier(key)) throw new Error(`unknown tier "${key}"`)
+      }
+      for (const tier of MODEL_TIERS) {
+        const value = body[tier]
+        if (value === null || value === undefined) {
+          delete cfg.tiers[tier]
+          continue
+        }
+        if (typeof value !== 'object') {
+          throw new Error(`tiers.${tier} must be an object or null`)
+        }
+        const providerId = (value as Record<string, unknown>).providerId
+        const model = (value as Record<string, unknown>).model
+        // An empty providerId means "leave this tier unbound".
+        if (typeof providerId !== 'string' || !providerId.trim()) {
+          delete cfg.tiers[tier]
+          continue
+        }
+        if (typeof model !== 'string' || !model.trim()) {
+          throw new Error(`tiers.${tier}.model is required`)
+        }
+        if (!cfg.providers.some(p => p.id === providerId)) {
+          throw new Error(`tiers.${tier}: unknown provider "${providerId}"`)
+        }
+        cfg.tiers[tier] = { providerId: providerId.trim(), model: model.trim() }
+      }
+      saveProviderConfig(cfg)
+      json(res, 200, { tiers: cfg.tiers })
       return
     }
 
     if (req.method === 'POST' && path === '/api/fetch-models-direct') {
       // Fetch models without saving the provider first (used in the add form).
       const body = (await readJsonBody(req)) as Record<string, unknown>
+      const existingId = typeof body.id === 'string' ? body.id.trim() : ''
+      const typedKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : ''
+      // Editing an existing provider with the key field left blank: reuse the
+      // stored key instead of probing unauthenticated and reporting HTTP 401.
+      const storedKey = existingId
+        ? (loadProviderConfig().providers.find(p => p.id === existingId)?.apiKey ?? '')
+        : ''
       const provider: ProviderEntry = {
         id: '__preview__',
         label: 'preview',
         type: body.type === 'anthropic' ? 'anthropic' : 'openai',
         baseURL: typeof body.baseURL === 'string' ? body.baseURL.trim() : '',
-        apiKey: typeof body.apiKey === 'string' ? body.apiKey.trim() : '',
+        apiKey: typedKey || storedKey,
         models: [],
       }
       if (!provider.baseURL) throw new Error('baseURL is required')
@@ -251,12 +314,51 @@ export async function handleRequest(
 export interface ConfigServer {
   port: number
   url: string
+  /** True when `port` differs from the port that was asked for. */
+  fellBackFromPort?: number
   close: () => Promise<void>
 }
 
-export async function startConfigServer(preferredPort = 1511): Promise<ConfigServer> {
+/** Resolve the port to try first: explicit argument > env > built-in default. */
+export function resolvePreferredPort(explicit?: number): number {
+  if (Number.isInteger(explicit) && (explicit as number) > 0) {
+    return explicit as number
+  }
   const envPort = Number(process.env.CCLITE_CONFIG_PORT)
-  const chosen = Number.isInteger(envPort) && envPort > 0 ? envPort : preferredPort
+  if (Number.isInteger(envPort) && envPort > 0) return envPort
+  return DEFAULT_CONFIG_PORT
+}
+
+function listenOnce(
+  server: ReturnType<typeof createServer>,
+  port: number,
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const onError = (err: Error) => {
+      server.removeListener('listening', onListening)
+      reject(err)
+    }
+    const onListening = () => {
+      server.removeListener('error', onError)
+      resolve()
+    }
+    server.once('error', onError)
+    server.once('listening', onListening)
+    server.listen(port, HOST)
+  })
+}
+
+/**
+ * Start the WebUI. Port selection: explicit `preferredPort` (from --port) wins
+ * over $CCLITE_CONFIG_PORT, which wins over 1511. When the chosen port is busy
+ * we scan upward instead of failing, so a second `cclite config` (or any
+ * unrelated process on 1511) no longer blocks the UI. Port 0 is honored
+ * verbatim for tests (the OS picks an ephemeral port).
+ */
+export async function startConfigServer(
+  preferredPort?: number,
+): Promise<ConfigServer> {
+  const first = preferredPort === 0 ? 0 : resolvePreferredPort(preferredPort)
   const server = createServer((req, res) => {
     void handleRequest(req, res).catch(err => {
       try {
@@ -266,21 +368,41 @@ export async function startConfigServer(preferredPort = 1511): Promise<ConfigSer
       }
     })
   })
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject)
-    server.listen(chosen, HOST, () => resolve())
-  })
+
+  const attempts = first === 0 ? 1 : PORT_SCAN_ATTEMPTS
+  let lastError: unknown
+  let bound = false
+  for (let i = 0; i < attempts; i++) {
+    try {
+      await listenOnce(server, first === 0 ? 0 : first + i)
+      bound = true
+      break
+    } catch (err) {
+      lastError = err
+      if ((err as NodeJS.ErrnoException).code !== 'EADDRINUSE') break
+    }
+  }
+  if (!bound) {
+    server.close()
+    throw lastError instanceof Error
+      ? lastError
+      : new Error(String(lastError))
+  }
+
   const address = server.address()
-  const actualPort = typeof address === 'object' && address ? address.port : chosen
+  const actualPort = typeof address === 'object' && address ? address.port : first
   // Bust the mtime cache so this process serves file changes from other
   // writers (multiple `cclite config` runs in a row).
   resetProviderConfigCacheForTests()
   return {
     port: actualPort,
     url: `http://${HOST}:${actualPort}`,
+    ...(first !== 0 && actualPort !== first ? { fellBackFromPort: first } : {}),
     close: () =>
       new Promise<void>((resolve, reject) =>
         server.close(err => (err ? reject(err) : resolve())),
       ),
   }
 }
+
+export type { ModelTier }

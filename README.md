@@ -502,25 +502,28 @@ cclite config   # opens http://127.0.0.1:1511
 
 The page lets you:
 
-- register any number of providers (OpenAI-compatible or Anthropic-compatible; local servers like Ollama/LM Studio work too — API key optional there),
+- register and keep any number of providers (OpenAI-compatible or Anthropic-compatible; local servers like Ollama/LM Studio work too — API key optional there),
 - pull each provider's model list with one click (`GET /models`),
-- route each **scope** to a different provider + model:
-  | scope | role |
-  |---|---|
-  | `main` | planner — the big model driving the conversation |
-  | `subagent` | worker — the small model doing tool execution / subagent work |
-  | `advisor` | reviewer — the Advisor tool's model (optional) |
+- bind the **pro / plus / se** codenames to a provider + model each:
+  | codename | role | suggestion |
+  |---|---|---|
+  | `pro` | planner — main loop and planning | your strongest cloud model |
+  | `plus` | mid tier — Advisor review / second opinion | a mid-priced model |
+  | `se` | economy — subagents and tool grunt work | a cheap or local small model |
 
-  A classic split: main = a frontier cloud model for planning, subagent = a
-  cheap/local small model for the grunt work — across different vendors.
+  The codebase always calls models by codename (`/model pro`, `--model se`), so
+  what a codename points at is decided entirely in the WebUI — mix vendors freely.
 
 Configuration is stored at `~/.claude/providers.json` (plain JSON, `0600`
-permissions). The server binds **127.0.0.1 only** and stops when the
-`cclite config` command exits. A running CLI picks up edits on the next
-request (no restart needed). `--port <n>` or `CCLITE_CONFIG_PORT` changes
-the port; `--no-open` skips the browser.
+permissions). The server binds **127.0.0.1 only** (with Host/Origin checks that
+reject DNS rebinding) and stops when the `cclite config` command exits. Saves
+are **hot-reloaded**: a running CLI picks up edits on its next request, no
+restart. Port precedence is `--port <n>` > `CCLITE_CONFIG_PORT` > `1511`; if the
+port is taken the server scans upward for a free one and prints the real URL.
+`--no-open` skips the browser, and it is skipped automatically on headless
+Linux/SSH sessions.
 
-Routing wins over the env vars below; scopes left unrouted fall back to the
+Tier bindings win over the env vars below; unbound tiers fall back to the
 env-driven behavior, so existing setups keep working unchanged.
 
 Note: Unlike the upstream Claude Code, CC-lite does **not** support OAuth login via claude.ai. All authentication is done via API keys.

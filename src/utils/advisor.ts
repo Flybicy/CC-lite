@@ -2,11 +2,18 @@
 // Config
 // ---------------------------------------------------------------------------
 
+import { isTierBound } from './providers/providerRegistry.js'
 import { resolveModelProfileModel } from './model/modelProfiles.js'
 
+/**
+ * The Advisor model. When the `plus` tier is bound in providers.json we return
+ * the codename, so the concrete model is resolved per call and re-binding it in
+ * the WebUI applies without a restart.
+ */
 export function getAdvisorModel(): string | undefined {
   return (
     process.env.CLAUDE_CODE_ADVISOR_MODEL?.trim() ||
+    (isTierBound('plus') ? 'plus' : undefined) ||
     resolveModelProfileModel('advisor') ||
     undefined
   )
@@ -18,6 +25,7 @@ export function getAdvisorModelFromProfiles(
 ): string | undefined {
   return (
     process.env.CLAUDE_CODE_ADVISOR_MODEL?.trim() ||
+    (isTierBound('plus') ? 'plus' : undefined) ||
     modelProfiles?.advisor?.model ||
     undefined
   )

@@ -20,13 +20,13 @@ import {
 import { isEnvTruthy } from '../envUtils.js'
 import { getModelStrings, resolveOverriddenModel } from './modelStrings.js'
 import { formatModelPricing, getOpus46CostTier } from '../modelCost.js'
-import { getSettings_DEPRECATED } from '../settings/settings.js'
 import type { PermissionMode } from '../permissions/PermissionMode.js'
 import { getAPIProvider } from './providers.js'
 import { LIGHTNING_BOLT } from '../../constants/figures.js'
 import { isModelAllowed } from './modelAllowlist.js'
-import { type ModelAlias, isModelAlias } from './aliases.js'
-import { resolveModelProfileModel } from './modelProfiles.js'
+import { type ModelAlias, isModelAlias, isTierAlias } from './aliases.js'
+import { resolveModelProfileModel, resolveTierModel } from './modelProfiles.js'
+import { isTierBound } from '../providers/providerRegistry.js'
 import { capitalize } from '../stringUtils.js'
 
 export type ModelShortName = string
@@ -71,8 +71,16 @@ export function getUserSpecifiedModelSetting(): ModelSetting | undefined {
   if (modelOverride !== undefined && modelOverride !== null) {
     specifiedModel = modelOverride
   } else {
-    const settings = getSettings_DEPRECATED() || {}
-    specifiedModel = process.env.ANTHROPIC_MODEL || process.env.OPENAI_MODEL || resolveModelProfileModel('main') || undefined
+    // When providers.json binds the `pro` tier, return the codename rather
+    // than the concrete model ID: the ID is then resolved per request by
+    // parseUserSpecifiedModel(), so re-binding pro in the WebUI takes effect
+    // immediately and the UI keeps showing the stable codename.
+    specifiedModel =
+      process.env.ANTHROPIC_MODEL ||
+      process.env.OPENAI_MODEL ||
+      (isTierBound('pro') ? 'pro' : undefined) ||
+      resolveModelProfileModel('main') ||
+      undefined
   }
 
   // Ignore the user-specified model if it's not in the availableModels allowlist.
@@ -154,6 +162,13 @@ export function getRuntimeMainLoopModel(params: {
   exceeds200kTokens?: boolean
 }): ModelName {
   const { permissionMode, mainLoopModel, exceeds200kTokens = false } = params
+
+  // A tier codename may still be in flight here (subagents and the Advisor
+  // pass `se` / `plus` straight through as their mainLoopModel). Resolve it
+  // once per turn so a WebUI re-bind applies to the very next request.
+  if (isTierAlias(mainLoopModel)) {
+    return parseUserSpecifiedModel(mainLoopModel)
+  }
 
   // opusplan uses Opus in plan mode without [1m] suffix.
   if (
@@ -399,6 +414,13 @@ function maskModelCodename(baseName: string): string {
 }
 
 export function renderModelName(model: ModelName): string {
+  // Tier codenames render as `pro (resolved-id)`, so what the CLI is about to
+  // call is visible. The resolution happens against the live providers.json
+  // (mtime-cached), so the display tracks WebUI re-binds without a restart.
+  if (isTierAlias(model)) {
+    const resolved = parseUserSpecifiedModel(model)
+    return resolved === model ? model : `${model} (${resolved})`
+  }
   const publicName = getPublicModelDisplayName(model)
   if (publicName) {
     return publicName
@@ -458,6 +480,20 @@ export function parseUserSpecifiedModel(
   const modelString = has1mTag
     ? normalizedModel.replace(/\[1m]$/i, '').trim()
     : normalizedModel
+
+  // CC-lite tier codenames (pro / plus / se) resolve through providers.json at
+  // call time, so re-binding a tier in the WebUI applies to the next request
+  // with no restart. When a tier has no binding yet, fall back to a sane
+  // built-in per tier instead of sending the literal codename to the API.
+  if (isTierAlias(modelString)) {
+    const tierModel = resolveTierModel(modelString)
+    if (tierModel) {
+      return tierModel + (has1mTag ? '[1m]' : '')
+    }
+    const fallback =
+      modelString === 'se' ? getDefaultHaikuModel() : getDefaultSonnetModel()
+    return fallback + (has1mTag ? '[1m]' : '')
+  }
 
   if (isModelAlias(modelString)) {
     switch (modelString) {
@@ -616,5 +652,9 @@ export function getMarketingNameForModel(modelId: string): string | undefined {
 }
 
 export function normalizeModelStringForAPI(model: string): string {
-  return model.replace(/\[(1|2)m\]/gi, '')
+  // Safety net: a tier codename must never reach the wire. Any path that
+  // forgot to resolve it gets resolved here instead of sending "pro" as a
+  // model ID.
+  const resolved = isTierAlias(model) ? parseUserSpecifiedModel(model) : model
+  return resolved.replace(/\[(1|2)m\]/gi, '')
 }

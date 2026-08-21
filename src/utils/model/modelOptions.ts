@@ -32,6 +32,11 @@ import {
 } from './model.js'
 import { has1mContext } from '../context.js'
 import { getGlobalConfig } from '../config.js'
+import {
+  MODEL_TIERS,
+  TIER_LABELS,
+  resolveTierProvider,
+} from '../providers/providerRegistry.js'
 
 // @[MODEL LAUNCH]: Update all the available and default model option strings below.
 
@@ -458,8 +463,27 @@ function getKnownModelOption(model: string): ModelOption | null {
   }
 }
 
+/**
+ * CC-lite tier options (pro / plus / se). Only tiers actually bound in
+ * providers.json are offered, and they lead the list because on a CC-lite
+ * install they are the models the user configured themselves.
+ */
+function getTierOptions(): ModelOption[] {
+  const out: ModelOption[] = []
+  for (const tier of MODEL_TIERS) {
+    const resolved = resolveTierProvider(tier)
+    if (!resolved) continue
+    out.push({
+      value: tier,
+      label: tier,
+      description: `${TIER_LABELS[tier].hint} — ${resolved.provider.label} / ${resolved.model}`,
+    })
+  }
+  return out
+}
+
 export function getModelOptions(fastMode = false): ModelOption[] {
-  const options = getModelOptionsBase(fastMode)
+  const options = [...getTierOptions(), ...getModelOptionsBase(fastMode)]
 
   // Add the custom model from the ANTHROPIC_CUSTOM_MODEL_OPTION env var
   const envCustomModel = process.env.ANTHROPIC_CUSTOM_MODEL_OPTION

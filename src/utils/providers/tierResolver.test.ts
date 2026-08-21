@@ -8,16 +8,16 @@ import {
   type ProviderConfig,
 } from './providerRegistry.js'
 import {
-  resolveScopeConnection,
-  resolveScopeConnectionByScope,
-} from './scopeResolver.js'
+  resolveTierConnection,
+  resolveTierConnectionByTier,
+} from './tierResolver.js'
 
 let dir: string
 let prevEnv: string | undefined
 
 beforeEach(() => {
   prevEnv = process.env.CLAUDE_CONFIG_DIR
-  dir = mkdtempSync(join(tmpdir(), 'cclite-scope-'))
+  dir = mkdtempSync(join(tmpdir(), 'cclite-tier-'))
   process.env.CLAUDE_CONFIG_DIR = dir
   resetProviderConfigCacheForTests()
 })
@@ -30,7 +30,7 @@ afterEach(() => {
 })
 
 const CFG: ProviderConfig = {
-  version: 1,
+  version: 2,
   providers: [
     {
       id: 'deepseek',
@@ -41,41 +41,44 @@ const CFG: ProviderConfig = {
       models: ['deepseek-chat'],
     },
   ],
-  routing: {
-    main: { providerId: 'deepseek', model: 'deepseek-chat' },
+  tiers: {
+    pro: { providerId: 'deepseek', model: 'deepseek-chat' },
   },
 }
 
-describe('resolveScopeConnection', () => {
-  it('resolves a routed scope to full connection details', () => {
+describe('resolveTierConnection', () => {
+  it('resolves a bound tier to full connection details', () => {
     saveProviderConfig(CFG)
-    const conn = resolveScopeConnection('repl_main_thread')
+    const conn = resolveTierConnection('repl_main_thread')
     expect(conn.source).toBe('routing')
     if (conn.source === 'routing') {
+      expect(conn.tier).toBe('pro')
+      expect(conn.scope).toBe('main')
       expect(conn.type).toBe('openai')
       expect(conn.baseURL).toBe('https://api.deepseek.com/v1')
       expect(conn.apiKey).toBe('sk-ds')
       expect(conn.model).toBe('deepseek-chat')
-      expect(conn.scope).toBe('main')
     }
   })
 
-  it('maps agent sources to the subagent scope', () => {
+  it('maps agent sources to the se tier', () => {
     saveProviderConfig(CFG)
-    // subagent not routed in CFG → env fallback, but scope label is subagent
-    const conn = resolveScopeConnection('agent:builtin:Task')
+    // se is unbound in CFG → env fallback, but the tier label is still se
+    const conn = resolveTierConnection('agent:builtin:Task')
     expect(conn.source).toBe('env')
+    expect(conn.tier).toBe('se')
     expect(conn.scope).toBe('subagent')
   })
 
-  it('maps advisor source to advisor scope', () => {
+  it('maps the advisor source to the plus tier', () => {
     saveProviderConfig(CFG)
-    const conn = resolveScopeConnection('advisor')
+    const conn = resolveTierConnection('advisor')
+    expect(conn.tier).toBe('plus')
     expect(conn.scope).toBe('advisor')
   })
 
-  it('falls back to env when no routing exists', () => {
-    const conn = resolveScopeConnectionByScope('main')
+  it('falls back to env when the tier is unbound', () => {
+    const conn = resolveTierConnectionByTier('pro')
     expect(conn.source).toBe('env')
   })
 })

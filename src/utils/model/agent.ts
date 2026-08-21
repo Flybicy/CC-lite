@@ -8,6 +8,7 @@ import {
   parseUserSpecifiedModel,
 } from './model.js'
 import { resolveModelProfileModel } from './modelProfiles.js'
+import { isTierBound } from '../providers/providerRegistry.js'
 import { getAPIProvider } from './providers.js'
 
 export type AgentModelOption = {
@@ -17,10 +18,13 @@ export type AgentModelOption = {
 }
 
 /**
- * Get the default subagent model. Falls back to modelProfiles.subagent.model
- * if configured, otherwise 'inherit' (use the parent thread's model).
+ * Get the default subagent model. Prefers the `se` tier codename when it is
+ * bound in providers.json (resolved per call, so WebUI edits apply without a
+ * restart), then modelProfiles.subagent.model, otherwise 'inherit' (use the
+ * parent thread's model).
  */
 export function getDefaultSubagentModel(): string {
+  if (isTierBound('se')) return 'se'
   return resolveModelProfileModel('subagent') ?? 'inherit'
 }
 

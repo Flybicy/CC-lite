@@ -66,21 +66,40 @@ detect_pkg_mgr() {
 }
 
 # Install a package with the detected package manager (best effort).
+#
+# This script is normally run as `curl ... | bash`, so stdin is the pipe, not a
+# terminal: any command that prompts (a sudo password, an apt "are you sure")
+# would hang forever with no visible reason. So: only use sudo when it is
+# already passwordless, and redirect every package command's stdin from
+# /dev/null so a stray prompt fails fast instead of hanging.
 pkg_install() {
   local name="$1" mgr
   mgr="$(detect_pkg_mgr)"
   [ -z "$mgr" ] && return 1
+
   local SUDO=""
-  if [ "$(id -u)" -ne 0 ] && command -v sudo &>/dev/null; then SUDO="sudo"; fi
+  if [ "$(id -u)" -ne 0 ]; then
+    if command -v sudo &>/dev/null && sudo -n true 2>/dev/null; then
+      SUDO="sudo -n"
+    else
+      warn "Cannot install $name automatically: root is required and sudo would"
+      warn "ask for a password (this script has no terminal to type it into)."
+      warn "Run this first, then re-run the installer:"
+      warn "    sudo $(printf '%s' "$mgr") install $name"
+      return 1
+    fi
+  fi
+
   info "Installing $name via $mgr..."
+  export DEBIAN_FRONTEND=noninteractive
   case "$mgr" in
-    apt)    $SUDO apt-get update -qq && $SUDO apt-get install -y "$name" ;;
-    dnf)    $SUDO dnf install -y "$name" ;;
-    yum)    $SUDO yum install -y "$name" ;;
-    pacman) $SUDO pacman -Sy --noconfirm "$name" ;;
-    zypper) $SUDO zypper --non-interactive install "$name" ;;
-    apk)    $SUDO apk add "$name" ;;
-    brew)   brew install "$name" ;;
+    apt)    $SUDO apt-get update -qq </dev/null && $SUDO apt-get install -y "$name" </dev/null ;;
+    dnf)    $SUDO dnf install -y "$name" </dev/null ;;
+    yum)    $SUDO yum install -y "$name" </dev/null ;;
+    pacman) $SUDO pacman -Sy --noconfirm "$name" </dev/null ;;
+    zypper) $SUDO zypper --non-interactive install "$name" </dev/null ;;
+    apk)    $SUDO apk add "$name" </dev/null ;;
+    brew)   brew install "$name" </dev/null ;;
     *)      return 1 ;;
   esac
 }
@@ -195,7 +214,7 @@ check_bun() {
 }
 
 install_bun() {
-  curl -fsSL https://bun.sh/install | bash
+  curl -fsSL https://bun.sh/install | bash </dev/null
   # Source the updated profile so bun is on PATH for this session
   export BUN_INSTALL="${BUN_INSTALL:-$HOME/.bun}"
   export PATH="$BUN_INSTALL/bin:$PATH"
@@ -211,37 +230,54 @@ install_bun() {
 # Clone & build
 # -------------------------------------------------------------------
 
+# Fetch or refresh the source cache.
+#
+# GIT_TERMINAL_PROMPT=0 is essential: without it a stale cache with a bad
+# remote makes git block on a credential prompt it can never receive (stdin is
+# the curl pipe), which looks exactly like a hang. On any pull failure we throw
+# the cache away and re-clone rather than building from a half-updated tree.
 clone_repo() {
-  if [ -d "$BUILD_DIR" ]; then
-    warn "$BUILD_DIR already exists"
-    if [ -d "$BUILD_DIR/.git" ]; then
-      info "Pulling latest changes..."
-      git -C "$BUILD_DIR" pull --ff-only origin main 2>/dev/null || {
-        warn "Pull failed, continuing with existing copy"
-      }
+  export GIT_TERMINAL_PROMPT=0
+  export GIT_ASKPASS=/bin/echo
+  export GIT_SSH_COMMAND="ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new"
+
+  if [ -d "$BUILD_DIR/.git" ]; then
+    info "Refreshing existing source cache ($BUILD_DIR)..."
+    if git -C "$BUILD_DIR" fetch --depth 1 origin main </dev/null 2>&1 &&
+       git -C "$BUILD_DIR" reset --hard FETCH_HEAD </dev/null >/dev/null 2>&1; then
+      ok "Source cache updated"
+      ok "Source cache: $BUILD_DIR"
+      return
     fi
-  else
-    info "Cloning repository to cache..."
-    git clone --depth 1 "$REPO" "$BUILD_DIR"
+    warn "Could not refresh the cache — re-cloning from scratch"
+    rm -rf "$BUILD_DIR"
+  elif [ -d "$BUILD_DIR" ]; then
+    warn "$BUILD_DIR exists but is not a git checkout — replacing it"
+    rm -rf "$BUILD_DIR"
   fi
+
+  info "Cloning repository to cache (this can take a minute)..."
+  git clone --depth 1 "$REPO" "$BUILD_DIR" </dev/null ||
+    fail "git clone failed. Check your network/proxy and that $REPO is reachable."
   ok "Source cache: $BUILD_DIR"
 }
 
 install_deps() {
-  info "Installing dependencies..."
+  info "Installing dependencies (several hundred MB, a few minutes on a cold cache)..."
   cd "$BUILD_DIR" || fail "Cannot enter $BUILD_DIR"
-  bun install --frozen-lockfile 2>/dev/null || bun install
+  bun install --frozen-lockfile </dev/null || bun install </dev/null ||
+    fail "bun install failed. Re-run with a working network, or inspect $BUILD_DIR."
   ok "Dependencies installed"
 }
 
 build_bundle() {
-  info "Building cclite (JS bundle)..."
+  info "Building cclite (JS bundle, ~1 minute)..."
   cd "$BUILD_DIR" || fail "Cannot enter $BUILD_DIR"
-  bun run build:bundle:cclite
+  bun run build:bundle:cclite </dev/null
   [ -f "$BUILD_DIR/cclite.js" ] || fail "Build did not produce cclite.js."
   # Small standalone verifier shipped next to the bundle so users can re-check
   # the embedding model at any time via `cclite-verify-embeddings`.
-  bun run build:bundle:verify || warn "Could not build the embeddings verifier (non-fatal)"
+  bun run build:bundle:verify </dev/null || warn "Could not build the embeddings verifier (non-fatal)"
   ok "Bundle built: $BUILD_DIR/cclite.js"
 }
 
@@ -267,10 +303,10 @@ install_lib() {
 }
 EOF
 
-  info "Installing the local semantic embedding model runtime (~130MB)..."
+  info "Installing the local semantic embedding model runtime (~130MB download, be patient)..."
   cd "$LIB_DIR" || fail "Cannot enter $LIB_DIR"
   # --trust: onnxruntime-node's postinstall picks the platform binary.
-  bun install --trust 2>/dev/null || bun install || {
+  bun install --trust </dev/null || bun install </dev/null || {
     warn "Could not install the embedding runtime."
     warn "Semantic search will fall back to approximate matching."
     return 0
@@ -311,9 +347,9 @@ trim_lib() {
 # and the user sees proof that real semantic search works.
 prefetch_model() {
   [ -f "$LIB_DIR/verify-embeddings.js" ] || return 0
-  info "Downloading the semantic model (~23MB, one time) and verifying..."
+  info "Downloading the semantic model (~23MB, one time) and verifying — no output for a while is normal..."
   cd "$LIB_DIR" || return 0
-  if bun ./verify-embeddings.js; then
+  if bun ./verify-embeddings.js </dev/null; then
     ok "Semantic search ready"
   else
     warn "Model prefetch/verification failed - semantic search will fall back"
@@ -437,10 +473,13 @@ printf "    ${CYAN}cclite${RESET}                           # interactive REPL\n
 printf "    ${CYAN}cclite-bypass${RESET}                    # interactive REPL with bypassPermissions\n"
 printf "    ${CYAN}cclite -p \"your prompt\"${RESET}          # one-shot mode\n"
 printf "    ${CYAN}cclite-verify-embeddings${RESET}          # re-check the local semantic model\n"
-printf "    ${CYAN}cclite config${RESET}                     # WebUI at 127.0.0.1:1511 - providers + model routing\n"
+printf "    ${CYAN}cclite config${RESET}                     # WebUI at 127.0.0.1:1511 - providers + pro/plus/se models\n"
 echo ""
 printf "  ${BOLD}Recommended: configure providers via the local WebUI:${RESET}\n"
-printf "    ${CYAN}cclite config${RESET}    # multi-provider + main(planner)/subagent(worker)/advisor routing\n"
+printf "    ${CYAN}cclite config${RESET}    # save several providers, then bind the pro / plus / se models\n"
+printf "                     # pro  = main loop, plus = advisor, se = subagents\n"
+printf "                     # saving applies on the next request - no restart\n"
+printf "                     # busy port? it scans upward, or use: cclite config --port 1600\n"
 echo ""
 printf "  ${BOLD}Or set your API key via env vars:${RESET}\n"
 printf "    ${CYAN}export ANTHROPIC_API_KEY=\"sk-ant-...\"${RESET}\n"

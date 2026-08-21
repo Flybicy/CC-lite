@@ -1,15 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   getProviderConfigPath,
   isProviderRoutingActive,
+  isTierBound,
   loadProviderConfig,
   resetProviderConfigCacheForTests,
   resolveScopeProvider,
+  resolveTierProvider,
   saveProviderConfig,
   scopeForQuerySource,
+  tierForQuerySource,
   type ProviderConfig,
 } from './providerRegistry.js'
 
@@ -31,7 +34,7 @@ afterEach(() => {
 })
 
 const SAMPLE: ProviderConfig = {
-  version: 1,
+  version: 2,
   providers: [
     {
       id: 'openai-main',
@@ -50,9 +53,9 @@ const SAMPLE: ProviderConfig = {
       models: ['qwen2.5-7b'],
     },
   ],
-  routing: {
-    main: { providerId: 'openai-main', model: 'gpt-4o' },
-    subagent: { providerId: 'local-lm', model: 'qwen2.5-7b' },
+  tiers: {
+    pro: { providerId: 'openai-main', model: 'gpt-4o' },
+    se: { providerId: 'local-lm', model: 'qwen2.5-7b' },
   },
 }
 
@@ -60,7 +63,7 @@ describe('providerRegistry', () => {
   it('returns an empty config when the file is absent', () => {
     const cfg = loadProviderConfig()
     expect(cfg.providers).toEqual([])
-    expect(cfg.routing).toEqual({})
+    expect(cfg.tiers).toEqual({})
     expect(isProviderRoutingActive()).toBe(false)
   })
 
@@ -69,32 +72,63 @@ describe('providerRegistry', () => {
     expect(getProviderConfigPath()).toBe(join(dir, 'providers.json'))
     const cfg = loadProviderConfig()
     expect(cfg.providers).toHaveLength(2)
-    expect(cfg.routing.main?.model).toBe('gpt-4o')
+    expect(cfg.tiers.pro?.model).toBe('gpt-4o')
     expect(isProviderRoutingActive()).toBe(true)
   })
 
-  it('resolves the provider bound to a scope', () => {
+  it('resolves the provider bound to a tier', () => {
     saveProviderConfig(SAMPLE)
-    const main = resolveScopeProvider('main')
-    expect(main?.provider.id).toBe('openai-main')
-    expect(main?.provider.apiKey).toBe('sk-main')
-    expect(main?.model).toBe('gpt-4o')
+    const pro = resolveTierProvider('pro')
+    expect(pro?.provider.id).toBe('openai-main')
+    expect(pro?.provider.apiKey).toBe('sk-main')
+    expect(pro?.model).toBe('gpt-4o')
+    expect(pro?.scope).toBe('main')
 
-    const sub = resolveScopeProvider('subagent')
-    expect(sub?.provider.baseURL).toBe('http://127.0.0.1:1234/v1')
-    expect(sub?.model).toBe('qwen2.5-7b')
+    const se = resolveTierProvider('se')
+    expect(se?.provider.baseURL).toBe('http://127.0.0.1:1234/v1')
+    expect(se?.model).toBe('qwen2.5-7b')
 
-    // advisor has no routing entry
+    // plus has no binding
+    expect(resolveTierProvider('plus')).toBeNull()
+    expect(isTierBound('plus')).toBe(false)
+    expect(isTierBound('pro')).toBe(true)
+  })
+
+  it('resolves through the legacy scope names too', () => {
+    saveProviderConfig(SAMPLE)
+    expect(resolveScopeProvider('main')?.model).toBe('gpt-4o')
+    expect(resolveScopeProvider('subagent')?.model).toBe('qwen2.5-7b')
     expect(resolveScopeProvider('advisor')).toBeNull()
   })
 
-  it('returns null when routing points at a missing provider', () => {
+  it('migrates a v1 file with routing/main/subagent/advisor to tiers', () => {
+    writeFileSync(
+      join(dir, 'providers.json'),
+      JSON.stringify({
+        version: 1,
+        providers: SAMPLE.providers,
+        routing: {
+          main: { providerId: 'openai-main', model: 'gpt-4o' },
+          subagent: { providerId: 'local-lm', model: 'qwen2.5-7b' },
+          advisor: { providerId: 'openai-main', model: 'gpt-4o-mini' },
+        },
+      }),
+      'utf8',
+    )
+    const cfg = loadProviderConfig()
+    expect(cfg.version).toBe(2)
+    expect(cfg.tiers.pro?.model).toBe('gpt-4o')
+    expect(cfg.tiers.se?.model).toBe('qwen2.5-7b')
+    expect(cfg.tiers.plus?.model).toBe('gpt-4o-mini')
+  })
+
+  it('returns null when a tier points at a missing provider', () => {
     saveProviderConfig({
-      version: 1,
+      version: 2,
       providers: [],
-      routing: { main: { providerId: 'ghost', model: 'x' } },
+      tiers: { pro: { providerId: 'ghost', model: 'x' } },
     })
-    expect(resolveScopeProvider('main')).toBeNull()
+    expect(resolveTierProvider('pro')).toBeNull()
     expect(isProviderRoutingActive()).toBe(false)
   })
 
@@ -104,29 +138,34 @@ describe('providerRegistry', () => {
     expect(cfg.providers).toEqual([])
   })
 
-  it('maps query sources to scopes', () => {
+  it('maps query sources to tiers and legacy scopes', () => {
+    expect(tierForQuerySource('advisor')).toBe('plus')
+    expect(tierForQuerySource('agent:custom')).toBe('se')
+    expect(tierForQuerySource('repl_main_thread')).toBe('pro')
+    expect(tierForQuerySource(undefined)).toBe('pro')
+
     expect(scopeForQuerySource('advisor')).toBe('advisor')
     expect(scopeForQuerySource('agent:custom')).toBe('subagent')
     expect(scopeForQuerySource('repl_main_thread')).toBe('main')
     expect(scopeForQuerySource(undefined)).toBe('main')
   })
 
-  it('picks up external edits via mtime cache invalidation', () => {
+  it('picks up external edits via cache invalidation (hot reload)', () => {
     saveProviderConfig(SAMPLE)
-    expect(loadProviderConfig().providers).toHaveLength(2)
-    // simulate an external writer (WebUI) replacing the file
+    expect(loadProviderConfig().tiers.pro?.model).toBe('gpt-4o')
+    // simulate an external writer (the WebUI) replacing the file
     const next: ProviderConfig = {
       ...SAMPLE,
       providers: [SAMPLE.providers[0]],
-      routing: { main: { providerId: 'openai-main', model: 'gpt-4o-mini' } },
+      tiers: { pro: { providerId: 'openai-main', model: 'gpt-4o-mini' } },
     }
-    // ensure mtime advances even on coarse clocks
-    const later = Date.now() + 2000
     writeFileSync(join(dir, 'providers.json'), JSON.stringify(next), 'utf8')
-    const { utimesSync } = require('node:fs')
-    utimesSync(join(dir, 'providers.json'), later / 1000, later / 1000)
+    // ensure the identity key changes even on coarse mtime clocks
+    const later = (Date.now() + 2000) / 1000
+    utimesSync(join(dir, 'providers.json'), later, later)
     const cfg = loadProviderConfig()
     expect(cfg.providers).toHaveLength(1)
-    expect(cfg.routing.main?.model).toBe('gpt-4o-mini')
+    expect(cfg.tiers.pro?.model).toBe('gpt-4o-mini')
+    expect(resolveTierProvider('pro')?.model).toBe('gpt-4o-mini')
   })
 })

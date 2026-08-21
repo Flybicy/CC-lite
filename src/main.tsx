@@ -3562,8 +3562,8 @@ async function run(): Promise<CommanderCommand> {
   });
 
 
-  // cclite config — local WebUI for provider registry + model routing
-  program.command('config').description('Open the local WebUI (http://127.0.0.1:1511) to configure providers and model routing').option('--port <number>', 'Port to listen on (default 1511, or CCLITE_CONFIG_PORT)').option('--no-open', 'Do not open the browser automatically', false).action(async (opts: {
+  // cclite config — local WebUI for the provider registry + pro/plus/se tiers
+  program.command('config').description('Open the local WebUI (http://127.0.0.1:1511) to configure providers and the pro/plus/se models').option('--port <number>', 'Port to listen on (default 1511, or CCLITE_CONFIG_PORT)').option('--no-open', 'Do not open the browser automatically').action(async (opts: {
     port?: string;
     open?: boolean;
   }) => {
@@ -3573,22 +3573,37 @@ async function run(): Promise<CommanderCommand> {
     const {
       openBrowser
     } = await import('./utils/browser.js');
-    const preferred = opts.port && Number.isInteger(Number(opts.port)) && Number(opts.port) > 0 ? Number(opts.port) : 1511;
-    let server;
-    try {
-      server = await startConfigServer(preferred);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error('Could not start the config WebUI: ' + message);
-      console.error('The port may be in use by another `cclite config`. Try --port 1512 or close the other instance.');
+    // --port wins over CCLITE_CONFIG_PORT, which wins over 1511. Passing
+    // undefined lets startConfigServer apply that precedence itself.
+    const explicitPort = opts.port !== undefined ? Number(opts.port) : undefined;
+    if (explicitPort !== undefined && (!Number.isInteger(explicitPort) || explicitPort <= 0 || explicitPort > 65535)) {
+      console.error('Invalid --port value: ' + opts.port);
       process.exitCode = 1;
       return;
     }
+    let server;
+    try {
+      server = await startConfigServer(explicitPort);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('Could not start the config WebUI: ' + message);
+      console.error('Every port in the scanned range was busy. Free one, or pick another with --port 1600.');
+      process.exitCode = 1;
+      return;
+    }
+    if (server.fellBackFromPort !== undefined) {
+      console.log('Port ' + server.fellBackFromPort + ' was busy — using ' + server.port + ' instead.');
+    }
     console.log('CC-lite 配置页面已就绪： ' + server.url);
-    console.log('Configure providers and main/subagent/advisor model routing here. Changes save to ~/.claude/providers.json and apply on the next request.');
+    console.log('Register providers and bind the pro / plus / se models here. Saves to ~/.claude/providers.json and applies on the next request — no restart needed.');
     console.log('Press Ctrl+C to stop.');
-    if (opts.open !== false) {
+    // Headless boxes (ssh, containers, WSL without a bridge) have no browser:
+    // xdg-open there either fails or blocks. Print the URL and skip it.
+    const headless = process.platform === 'linux' && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY && !process.env.BROWSER;
+    if (opts.open !== false && !headless) {
       await openBrowser(server.url);
+    } else if (headless) {
+      console.log('No graphical session detected — open the URL above manually (forward the port if you are on ssh).');
     }
     await new Promise<void>(resolve => {
       const shutdown = () => {

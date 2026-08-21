@@ -1,6 +1,10 @@
 import type { ModelProfile, ModelProfiles } from '../settings/types.js'
 import { getInitialSettings } from '../settings/settings.js'
-import { resolveScopeProvider } from '../providers/providerRegistry.js'
+import {
+  resolveTierProvider,
+  SCOPE_TO_TIER,
+  type ModelTier,
+} from '../providers/providerRegistry.js'
 
 export type ModelScope = 'main' | 'subagent' | 'advisor'
 
@@ -18,15 +22,29 @@ export function getModelProfiles(): ModelProfiles {
 // ---------------------------------------------------------------------------
 
 /**
+ * Resolve the model string bound to a CC-lite tier codename (pro/plus/se) in
+ * providers.json, or undefined when that tier has no binding.
+ *
+ * Read on every call (the registry is mtime-cached), so editing the binding in
+ * the WebUI takes effect on the next request without a restart.
+ */
+export function resolveTierModel(tier: ModelTier): string | undefined {
+  return resolveTierProvider(tier)?.model
+}
+
+/**
  * Resolve the effective model string for a given scope.
  *
- * Priority: providers.json routing (CC-lite multi-provider WebUI config) wins
- * over the settings modelProfiles entry. Callers that also honor an explicit
- * env var (ANTHROPIC_MODEL / CLAUDE_CODE_ADVISOR_MODEL / ...) check that env
- * var before calling this, so env stays the highest-priority override.
+ * Priority: providers.json tier binding (CC-lite multi-provider WebUI config)
+ * wins over the settings modelProfiles entry. Callers that also honor an
+ * explicit env var (ANTHROPIC_MODEL / CLAUDE_CODE_ADVISOR_MODEL / ...) check
+ * that env var before calling this, so env stays the highest-priority override.
  */
 export function resolveModelProfileModel(scope: ModelScope): string | undefined {
-  return resolveScopeProvider(scope)?.model ?? getInitialSettings().modelProfiles?.[scope]?.model
+  return (
+    resolveTierModel(SCOPE_TO_TIER[scope]) ??
+    getInitialSettings().modelProfiles?.[scope]?.model
+  )
 }
 
 /** Resolve the context window override from modelProfiles for a given scope. */

@@ -407,10 +407,12 @@ function Main {
   Write-Host "    cclite                       # interactive REPL"
   Write-Host "    cclite -p `"your prompt`"            # one-shot mode"
   Write-Host "    cclite-verify-embeddings            # re-check the local semantic model"
-  Write-Host "    cclite config                     # WebUI at 127.0.0.1:1511 - providers + model routing"
+  Write-Host "    cclite config                     # WebUI at 127.0.0.1:1511 - providers + pro/plus/se models"
   Write-Host ""
   Write-Host "  Recommended: configure providers via the local WebUI:" -ForegroundColor White
-  Write-Host "    cclite config    # multi-provider + main(planner)/subagent(worker)/advisor routing"
+  Write-Host "    cclite config    # save several providers, then bind the pro / plus / se models"
+  Write-Host "                     # pro = main loop, plus = advisor, se = subagents"
+  Write-Host "                     # saving applies on the next request - no restart"
   Write-Host ""
   Write-Host "  Or set your Anthropic Messages API key:" -ForegroundColor White
   Write-Host "    `$env:ANTHROPIC_API_KEY = `"sk-ant-...`""

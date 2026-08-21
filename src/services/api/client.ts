@@ -14,7 +14,7 @@ import {
   getIsNonInteractiveSession,
   getSessionId,
 } from '../../bootstrap/state.js'
-import { resolveScopeConnection } from '../../utils/providers/scopeResolver.js'
+import { resolveTierConnection } from '../../utils/providers/tierResolver.js'
 import { isDebugToStdErr, logForDebugging } from '../../utils/debug.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
 
@@ -82,12 +82,12 @@ export async function getAnthropicClient({
   }
 
   // CC-lite multi-provider routing: when providers.json binds this query's
-  // scope (main / subagent / advisor) to a provider, connect to that provider
-  // instead of the env-driven default. The routed model string itself was
-  // already selected upstream via resolveModelProfileModel().
-  const scopeConn = resolveScopeConnection(source)
+  // tier (pro / plus / se) to a provider, connect to that provider instead of
+  // the env-driven default. The bound model string itself was already selected
+  // upstream via resolveModelProfileModel() / the tier alias resolver.
+  const tierConn = resolveTierConnection(source)
 
-  await (scopeConn.source === 'routing'
+  await (tierConn.source === 'routing'
     ? Promise.resolve()
     : configureApiKeyHeaders(defaultHeaders, getIsNonInteractiveSession()))
   const resolvedFetch = buildFetch(fetchOverride, source)
@@ -106,21 +106,21 @@ export async function getAnthropicClient({
   }
   // Routed scope → OpenAI-compatible provider: use the shim pointed at the
   // routed baseURL/apiKey, regardless of the global CLAUDE_CODE_USE_OPENAI.
-  if (scopeConn.source === 'routing' && scopeConn.type === 'openai') {
+  if (tierConn.source === 'routing' && tierConn.type === 'openai') {
     const { createOpenAIShimClient } = await import('./openaiShim.js')
     return createOpenAIShimClient({
       defaultHeaders,
       maxRetries,
       timeout: parseInt(process.env.API_TIMEOUT_MS || String(600 * 1000), 10),
       providerOverride: {
-        baseUrl: scopeConn.baseURL,
-        apiKey: scopeConn.apiKey,
-        model: scopeConn.model,
+        baseUrl: tierConn.baseURL,
+        apiKey: tierConn.apiKey,
+        model: tierConn.model,
       },
     }) as unknown as Anthropic
   }
 
-  if (scopeConn.source === 'env' && isEnvTruthy(process.env.CLAUDE_CODE_USE_OPENAI)) {
+  if (tierConn.source === 'env' && isEnvTruthy(process.env.CLAUDE_CODE_USE_OPENAI)) {
     const { createOpenAIShimClient } = await import('./openaiShim.js')
     return createOpenAIShimClient({
       defaultHeaders,
@@ -131,10 +131,10 @@ export async function getAnthropicClient({
   const clientConfig: ConstructorParameters<typeof Anthropic>[0] = {
     // Routed scope → Anthropic-compatible provider gets its own baseURL+key;
     // env scope keeps the legacy resolution.
-    ...(scopeConn.source === 'routing'
+    ...(tierConn.source === 'routing'
       ? {
-          apiKey: scopeConn.apiKey || apiKey || getAnthropicApiKey(),
-          baseURL: scopeConn.baseURL,
+          apiKey: tierConn.apiKey || apiKey || getAnthropicApiKey(),
+          baseURL: tierConn.baseURL,
         }
       : { apiKey: apiKey || getAnthropicApiKey() }),
     ...ARGS,

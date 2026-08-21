@@ -6,7 +6,12 @@ import {
   loadProviderConfig,
   resetProviderConfigCacheForTests,
 } from '../utils/providers/providerRegistry.js'
-import { startConfigServer, type ConfigServer } from './server.js'
+import {
+  isAllowedHost,
+  resolvePreferredPort,
+  startConfigServer,
+  type ConfigServer,
+} from './server.js'
 
 let dir: string
 let prevEnv: string | undefined
@@ -39,10 +44,6 @@ async function call(path: string, method = 'GET', body?: unknown) {
   return { status: resp.status, data: await resp.json().catch(() => null) }
 }
 
-function getListenPort(url: string): number {
-  return Number(new URL(url).port)
-}
-
 describe('config WebUI server', () => {
   it('serves the HTML page', async () => {
     const resp = await fetch(base + '/')
@@ -50,6 +51,10 @@ describe('config WebUI server', () => {
     const html = await resp.text()
     expect(html).toContain('CC-lite')
     expect(html).toContain('提供商')
+    // the three tier codenames must be present in the page
+    expect(html).toContain('pro')
+    expect(html).toContain('plus')
+    expect(html).toContain('se')
   })
 
   it('adds a provider, reflects it in /api/config and on disk', async () => {
@@ -100,35 +105,52 @@ describe('config WebUI server', () => {
     expect(data.error).toContain('baseURL')
   })
 
-  it('saves routing for scopes and clears on null', async () => {
-    const put = await call('/api/routing', 'PUT', {
-      main: { providerId: 'local-lm-studio', model: 'qwen2.5-7b' },
-      subagent: { providerId: 'local-lm-studio-2', model: 'qwen2.5-3b' },
-      advisor: null,
+  it('rejects a non-http baseURL scheme', async () => {
+    const { status, data } = await call('/api/providers', 'POST', {
+      label: 'bad scheme',
+      baseURL: 'file:///etc/passwd',
+    })
+    expect(status).toBe(400)
+    expect(data.error).toContain('http')
+  })
+
+  it('saves pro/plus/se bindings and clears on null', async () => {
+    const put = await call('/api/tiers', 'PUT', {
+      pro: { providerId: 'local-lm-studio', model: 'qwen2.5-7b' },
+      se: { providerId: 'local-lm-studio-2', model: 'qwen2.5-3b' },
+      plus: null,
     })
     expect(put.status).toBe(200)
     resetProviderConfigCacheForTests()
     const cfg = loadProviderConfig()
-    expect(cfg.routing.main?.model).toBe('qwen2.5-7b')
-    expect(cfg.routing.subagent?.providerId).toBe('local-lm-studio-2')
-    expect(cfg.routing.advisor).toBeUndefined()
+    expect(cfg.tiers.pro?.model).toBe('qwen2.5-7b')
+    expect(cfg.tiers.se?.providerId).toBe('local-lm-studio-2')
+    expect(cfg.tiers.plus).toBeUndefined()
   })
 
-  it('rejects routing to an unknown provider', async () => {
-    const { status, data } = await call('/api/routing', 'PUT', {
-      main: { providerId: 'ghost', model: 'x' },
+  it('rejects binding a tier to an unknown provider', async () => {
+    const { status, data } = await call('/api/tiers', 'PUT', {
+      pro: { providerId: 'ghost', model: 'x' },
     })
     expect(status).toBe(400)
     expect(data.error).toContain('unknown provider')
   })
 
-  it('deleting a provider drops its routing bindings', async () => {
+  it('rejects an unknown tier name', async () => {
+    const { status, data } = await call('/api/tiers', 'PUT', {
+      ultra: { providerId: 'local-lm-studio', model: 'x' },
+    })
+    expect(status).toBe(400)
+    expect(data.error).toContain('unknown tier')
+  })
+
+  it('deleting a provider drops its tier bindings', async () => {
     const del = await call('/api/providers/local-lm-studio', 'DELETE')
     expect(del.status).toBe(200)
     resetProviderConfigCacheForTests()
     const cfg = loadProviderConfig()
-    expect(cfg.routing.main).toBeUndefined()
-    expect(cfg.routing.subagent?.providerId).toBe('local-lm-studio-2')
+    expect(cfg.tiers.pro).toBeUndefined()
+    expect(cfg.tiers.se?.providerId).toBe('local-lm-studio-2')
   })
 
   it('returns 404 for unknown routes', async () => {
@@ -136,14 +158,45 @@ describe('config WebUI server', () => {
     expect(status).toBe(404)
   })
 
-  it('env override sets the port', async () => {
+  it('rejects a non-loopback Host header (DNS rebinding guard)', async () => {
+    const resp = await fetch(base + '/api/config', {
+      headers: { host: 'evil.example.com' },
+    })
+    expect(resp.status).toBe(403)
+  })
+
+  it('rejects a cross-origin request', async () => {
+    const resp = await fetch(base + '/api/config', {
+      headers: { origin: 'https://evil.example.com' },
+    })
+    expect(resp.status).toBe(403)
+  })
+
+  it('accepts loopback hosts only', () => {
+    expect(isAllowedHost('127.0.0.1:1511')).toBe(true)
+    expect(isAllowedHost('localhost:1511')).toBe(true)
+    expect(isAllowedHost('[::1]:1511')).toBe(true)
+    expect(isAllowedHost('example.com')).toBe(false)
+    expect(isAllowedHost(undefined)).toBe(false)
+  })
+
+  it('prefers an explicit port over CCLITE_CONFIG_PORT', () => {
     const prev = process.env.CCLITE_CONFIG_PORT
     process.env.CCLITE_CONFIG_PORT = '18151'
-    const s2 = await startConfigServer()
-    expect(s2.port).toBe(18151)
-    await s2.close()
+    expect(resolvePreferredPort(1600)).toBe(1600)
+    expect(resolvePreferredPort(undefined)).toBe(18151)
     if (prev === undefined) delete process.env.CCLITE_CONFIG_PORT
     else process.env.CCLITE_CONFIG_PORT = prev
-    expect(getListenPort(server.url)).toBeGreaterThan(0)
+    expect(resolvePreferredPort(undefined)).toBe(1511)
+  })
+
+  it('scans upward when the preferred port is taken', async () => {
+    const first = await startConfigServer(18190)
+    expect(first.port).toBe(18190)
+    const second = await startConfigServer(18190)
+    expect(second.port).toBe(18191)
+    expect(second.fellBackFromPort).toBe(18190)
+    await first.close()
+    await second.close()
   })
 })
