@@ -490,3 +490,8 @@ printf "    ${CYAN}export OPENAI_BASE_URL=http://.../v1${RESET}\n"
 echo ""
 printf "  ${BOLD}See README.md for full configs.${RESET}\n"
 echo ""
+
+# Line-buffered wrappers (systemd-run, CI, `bash <(curl ...)`) can hold the
+# script's stdout open after the last printf flushes. Exit explicitly so the
+# shell reaps its runtime instead of sitting there until a stray EOF.
+exit 0
