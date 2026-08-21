@@ -3561,6 +3561,44 @@ async function run(): Promise<CommanderCommand> {
     await mcpResetChoicesHandler();
   });
 
+
+  // cclite config — local WebUI for provider registry + model routing
+  program.command('config').description('Open the local WebUI (http://127.0.0.1:1511) to configure providers and model routing').option('--port <number>', 'Port to listen on (default 1511, or CCLITE_CONFIG_PORT)').option('--no-open', 'Do not open the browser automatically', false).action(async (opts: {
+    port?: string;
+    open?: boolean;
+  }) => {
+    const {
+      startConfigServer
+    } = await import('./configui/server.js');
+    const {
+      openBrowser
+    } = await import('./utils/browser.js');
+    const preferred = opts.port && Number.isInteger(Number(opts.port)) && Number(opts.port) > 0 ? Number(opts.port) : 1511;
+    let server;
+    try {
+      server = await startConfigServer(preferred);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('Could not start the config WebUI: ' + message);
+      console.error('The port may be in use by another `cclite config`. Try --port 1512 or close the other instance.');
+      process.exitCode = 1;
+      return;
+    }
+    console.log('CC-lite 配置页面已就绪： ' + server.url);
+    console.log('Configure providers and main/subagent/advisor model routing here. Changes save to ~/.claude/providers.json and apply on the next request.');
+    console.log('Press Ctrl+C to stop.');
+    if (opts.open !== false) {
+      await openBrowser(server.url);
+    }
+    await new Promise<void>(resolve => {
+      const shutdown = () => {
+        void server.close().then(() => resolve());
+      };
+      process.on('SIGINT', shutdown);
+      process.on('SIGTERM', shutdown);
+    });
+  });
+
   // claude server
   if (feature('DIRECT_CONNECT')) {
     program.command('server').description('Start a CC-lite session server').option('--port <number>', 'HTTP port', '0').option('--host <string>', 'Bind address', '0.0.0.0').option('--auth-token <token>', 'Bearer token for auth').option('--unix <path>', 'Listen on a unix domain socket').option('--workspace <dir>', 'Default working directory for sessions that do not specify cwd').option('--idle-timeout <ms>', 'Idle timeout for detached sessions in ms (0 = never expire)', '600000').option('--max-sessions <n>', 'Maximum concurrent sessions (0 = unlimited)', '32').action(async (opts: {

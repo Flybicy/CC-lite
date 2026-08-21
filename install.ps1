@@ -407,11 +407,15 @@ function Main {
   Write-Host "    cclite                       # interactive REPL"
   Write-Host "    cclite -p `"your prompt`"            # one-shot mode"
   Write-Host "    cclite-verify-embeddings            # re-check the local semantic model"
+  Write-Host "    cclite config                     # WebUI at 127.0.0.1:1511 - providers + model routing"
   Write-Host ""
-  Write-Host "  Set your Anthropic Messages API key:" -ForegroundColor White
+  Write-Host "  Recommended: configure providers via the local WebUI:" -ForegroundColor White
+  Write-Host "    cclite config    # multi-provider + main(planner)/subagent(worker)/advisor routing"
+  Write-Host ""
+  Write-Host "  Or set your Anthropic Messages API key:" -ForegroundColor White
   Write-Host "    `$env:ANTHROPIC_API_KEY = `"sk-ant-...`""
   Write-Host ""
-  Write-Host "  Or OpenAI-compatible APIs:" -ForegroundColor White
+  Write-Host "  Or OpenAI-compatible APIs (also via `cclite config`):" -ForegroundColor White
   Write-Host "    `$env:CLAUDE_CODE_USE_OPENAI = 1"
   Write-Host "    `$env:OPENAI_BASE_URL = 'http://.../v1'"
   Write-Host ""

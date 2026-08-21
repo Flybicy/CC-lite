@@ -1,5 +1,6 @@
 import type { ModelProfile, ModelProfiles } from '../settings/types.js'
 import { getInitialSettings } from '../settings/settings.js'
+import { resolveScopeProvider } from '../providers/providerRegistry.js'
 
 export type ModelScope = 'main' | 'subagent' | 'advisor'
 
@@ -16,9 +17,16 @@ export function getModelProfiles(): ModelProfiles {
 // All consumers must go through these, not read getInitialSettings().modelProfiles directly.
 // ---------------------------------------------------------------------------
 
-/** Resolve the effective model string from modelProfiles for a given scope. */
+/**
+ * Resolve the effective model string for a given scope.
+ *
+ * Priority: providers.json routing (CC-lite multi-provider WebUI config) wins
+ * over the settings modelProfiles entry. Callers that also honor an explicit
+ * env var (ANTHROPIC_MODEL / CLAUDE_CODE_ADVISOR_MODEL / ...) check that env
+ * var before calling this, so env stays the highest-priority override.
+ */
 export function resolveModelProfileModel(scope: ModelScope): string | undefined {
-  return getInitialSettings().modelProfiles?.[scope]?.model
+  return resolveScopeProvider(scope)?.model ?? getInitialSettings().modelProfiles?.[scope]?.model
 }
 
 /** Resolve the context window override from modelProfiles for a given scope. */

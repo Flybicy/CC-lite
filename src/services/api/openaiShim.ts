@@ -662,11 +662,22 @@ class OpenAIShimStream {
   }
 }
 
+export interface ProviderOverride {
+  baseUrl?: string
+  apiKey?: string
+  model?: string
+}
+
 class OpenAIShimMessages {
   private defaultHeaders: Record<string, string>
+  private providerOverride?: ProviderOverride
 
-  constructor(defaultHeaders: Record<string, string>) {
+  constructor(
+    defaultHeaders: Record<string, string>,
+    providerOverride?: ProviderOverride,
+  ) {
     this.defaultHeaders = defaultHeaders
+    this.providerOverride = providerOverride
   }
 
   create(
@@ -676,7 +687,14 @@ class OpenAIShimMessages {
     const self = this
 
     const promise = (async () => {
-      const request = resolveProviderRequest({ model: params.model })
+      // params.model (resolved upstream for this scope) wins; the routed
+      // model from providers.json is only a fallback, mirroring how
+      // OPENAI_MODEL behaves relative to an explicit request model.
+      const request = resolveProviderRequest({
+        model: params.model,
+        baseUrl: this.providerOverride?.baseUrl,
+        fallbackModel: this.providerOverride?.model,
+      })
       const response = await self._doRequest(request, params, options)
       const usesResponsesTransport = request.transport === 'responses'
 
@@ -765,7 +783,7 @@ class OpenAIShimMessages {
       ...(options?.headers ?? {}),
     }
 
-    const apiKey = process.env.OPENAI_API_KEY ?? ''
+    const apiKey = this.providerOverride?.apiKey ?? process.env.OPENAI_API_KEY ?? ''
     const isAzure = /cognitiveservices\.azure\.com|openai\.azure\.com/.test(request.baseUrl)
 
     if (apiKey) {
@@ -882,7 +900,7 @@ class OpenAIShimMessages {
       ...(options?.headers ?? {}),
     }
 
-    const apiKey = process.env.OPENAI_API_KEY ?? ''
+    const apiKey = this.providerOverride?.apiKey ?? process.env.OPENAI_API_KEY ?? ''
     const isAzure = /cognitiveservices\.azure\.com|openai\.azure\.com/.test(request.baseUrl)
 
     if (apiKey) {
@@ -1007,8 +1025,11 @@ class OpenAIShimMessages {
 class OpenAIShimBeta {
   messages: OpenAIShimMessages
 
-  constructor(defaultHeaders: Record<string, string>) {
-    this.messages = new OpenAIShimMessages(defaultHeaders)
+  constructor(
+    defaultHeaders: Record<string, string>,
+    providerOverride?: ProviderOverride,
+  ) {
+    this.messages = new OpenAIShimMessages(defaultHeaders, providerOverride)
   }
 }
 
@@ -1016,10 +1037,14 @@ export function createOpenAIShimClient(options: {
   defaultHeaders?: Record<string, string>
   maxRetries?: number
   timeout?: number
+  providerOverride?: ProviderOverride
 }): unknown {
-  const beta = new OpenAIShimBeta({
-    ...(options.defaultHeaders ?? {}),
-  })
+  const beta = new OpenAIShimBeta(
+    {
+      ...(options.defaultHeaders ?? {}),
+    },
+    options.providerOverride,
+  )
 
   return {
     beta,

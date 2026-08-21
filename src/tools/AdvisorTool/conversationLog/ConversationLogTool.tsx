@@ -387,7 +387,7 @@ function createConversationLogTool(
     renderToolUseMessage(input: ConversationLogInput) {
       if (input.action === 'index') return <Text>Reading conversation index</Text>
       if (input.action === 'search') {
-        const label = (input.mode ?? 'keyword') === 'keyword'
+        const label = (input.mode ?? 'hybrid') === 'keyword'
           ? 'Searching conversation log'
           : `${input.mode} search of conversation log`
         return <Text>{label}</Text>
@@ -401,7 +401,7 @@ function createConversationLogTool(
         return { data: formatConversationIndex(entries_, input.offset, input.limit) }
       }
       if (input.action === 'search') {
-        if ((input.mode ?? 'keyword') !== 'keyword') {
+        if ((input.mode ?? 'hybrid') !== 'keyword') {
           try {
             return { data: await runSemanticSearch(input, context?.abortController?.signal) }
           } catch (err) {

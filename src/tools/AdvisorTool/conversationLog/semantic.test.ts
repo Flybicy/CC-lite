@@ -428,11 +428,12 @@ describe('ConversationLogTool semantic search', () => {
     expect(result.data).toContain('endpoint down')
   })
 
-  it('keyword mode remains the default and unchanged', async () => {
+  it('explicit keyword mode stays pure BM25', async () => {
     const { tool } = createConversationLogTool(entries, buildSearchIndex(entries))
     const parsed = conversationLogInputSchema.parse({
       action: 'search',
       query: 'kubernetes',
+      mode: 'keyword',
     })
     expect(parsed.mode).toBe('keyword')
     const result = await tool.call(parsed)
@@ -502,9 +503,9 @@ describe('ConversationLogTool semantic search', () => {
 // ---------------------------------------------------------------------------
 
 describe('search schema mode field', () => {
-  it('defaults to keyword', () => {
+  it('defaults to hybrid', () => {
     const parsed = conversationLogInputSchema.parse({ action: 'search', query: 'x' })
-    expect(parsed.mode).toBe('keyword')
+    expect(parsed.mode).toBe('hybrid')
   })
 
   it('accepts semantic and hybrid', () => {

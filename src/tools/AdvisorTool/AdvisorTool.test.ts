@@ -212,7 +212,7 @@ describe('ConversationLogTool search', () => {
     }]
     const index = buildSearchIndex(entries)
     const { tool } = createConversationLogTool(entries, index)
-    const result = await tool.call({ action: 'search', query: 'zzzmissing', top_k: 5 })
+    const result = await tool.call({ action: 'search', query: 'zzzmissing', mode: 'keyword', top_k: 5 })
     expect(result.data).toContain('No conversation messages matched')
   })
 
@@ -220,7 +220,7 @@ describe('ConversationLogTool search', () => {
     const index = buildSearchIndex([])
     const { tool } = createConversationLogTool([], index)
     const longQuery = Array.from({ length: 65 }, (_, i) => `word${i}`).join(' ')
-    const result = await tool.call({ action: 'search', query: longQuery, top_k: 5 })
+    const result = await tool.call({ action: 'search', query: longQuery, mode: 'keyword', top_k: 5 })
     expect(result.data).toContain('max 64')
   })
 
@@ -269,7 +269,7 @@ describe('ConversationLogTool output contract', () => {
   it('parses each action and supplies its defaults', () => {
     expect(conversationLogInputSchema.parse({ action: 'index' })).toEqual({ action: 'index', offset: 0, limit: 200 })
     expect(conversationLogInputSchema.parse({ action: 'search', query: 'cache' })).toEqual({
-      action: 'search', query: 'cache', mode: 'keyword', top_k: 10, match_mode: 'or',
+      action: 'search', query: 'cache', mode: 'hybrid', top_k: 10, match_mode: 'or',
     })
     expect(conversationLogInputSchema.parse({ action: 'read', message_ids: [1] })).toEqual({
       action: 'read', message_ids: [1], char_offset: 0,

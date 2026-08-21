@@ -27,11 +27,11 @@ export const conversationLogSearchSchema = z.strictObject({
     .describe('Text to search for.'),
   mode: z
     .enum(['keyword', 'semantic', 'hybrid'])
-    .default('keyword')
+    .default('hybrid')
     .describe(
-      '"keyword" = BM25 exact-term search (default). ' +
-      '"semantic" = embedding vector similarity (finds related wording and concepts; uses a configured embedding backend, falls back to an approximate local one). ' +
-      '"hybrid" = reciprocal-rank fusion of both (recommended for broad questions).',
+      '"hybrid" = reciprocal-rank fusion of keyword + semantic (default; uses the local semantic embedding model plus BM25 — best for most questions). ' +
+      '"keyword" = BM25 exact-term search only (best for identifiers, file names, error codes). ' +
+      '"semantic" = embedding vector similarity only (finds related wording and concepts; uses the local semantic model, falls back to an approximate local one).',
     ),
   top_k: z
     .number()

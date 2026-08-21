@@ -140,9 +140,9 @@ Advisor 通过 `ReadConversationLog` 工具读取主代理对话历史，支持�
 
 | 模式 | 说明 | 适用场景 |
 |---|---|---|
-| `keyword`（默认） | BM25 精确词匹配 | 标识符、文件名、错误码、确切 API 名 |
+| `hybrid`（**默认**） | 关键词 + 语义的 RRF(k=60) 融合 —— 每次检索都有本地语义小模型参与 | 大多数问题 |
+| `keyword` | BM25 精确词匹配 | 标识符、文件名、错误码、确切 API 名 |
 | `semantic` | 嵌入向量余弦相似度 | 话题用了不同措辞、需要语义联想 |
-| `hybrid` | 关键词 + 语义的 RRF(k=60) 融合 | 宽泛问题，通用默认 |
 
 搜索输出**始终标注所用嵌入后端**，不会静默降级。
 
@@ -266,6 +266,35 @@ src/voice/                # 语音输入
 CC-lite 同时支持 **Anthropic Messages API**（原生）与 **OpenAI 兼容 API**（适配层可用
 Chat Completions 或新版 Responses API）。与上游不同：**不支持** claude.ai OAuth 登录，
 全部通过 API Key 认证。
+
+### 多供应商 WebUI（`cclite config`）——推荐
+
+最省事的配置方式是本地 WebUI：
+
+```bash
+cclite config   # 打开 http://127.0.0.1:1511
+```
+
+页面上可以：
+
+- 注册任意多个提供商（OpenAI 兼容或 Anthropic 兼容；Ollama / LM Studio 等本地服务也支持，API Key 可留空）；
+- 一键拉取各提供商的模型列表（`GET /models`）；
+- 给每个**用途**分别指定不同的提供商 + 模型：
+  | 用途 | 角色 |
+  |---|---|
+  | `main` | 主模型 —— 驱动对话的规划者 |
+  | `subagent` | 副模型 —— 干活的小模型（工具执行 / 子代理） |
+  | `advisor` | 顾问 —— Advisor 复盘模型（可选） |
+
+  典型搭配：main 用云端大模型规划，subagent 用本地/便宜小模型干活——跨供应商随意组合。
+
+配置保存在 `~/.claude/providers.json`（纯 JSON，0600 权限）。服务仅监听
+**127.0.0.1**，`cclite config` 命令退出即停止。修改保存后，正在运行的 CLI
+下一次请求即生效，无需重启。`--port <n>` 或 `CCLITE_CONFIG_PORT` 可改端口；
+`--no-open` 不自动打开浏览器。
+
+路由生效时优先于下面的环境变量；没配置路由的用途完全走原有 env 逻辑，
+存量用法不受影响。
 
 ### Anthropic Messages API
 ```bash

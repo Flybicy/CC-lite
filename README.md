@@ -331,9 +331,9 @@ The Advisor reads the main agent's conversation history through its
 
 | mode | what it does | when to use |
 |---|---|---|
-| `keyword` (default) | BM25 exact-term search | identifiers, file names, error codes, exact API names |
-| `semantic` | embedding-vector cosine similarity | the topic may be discussed using different words than your query |
-| `hybrid` | reciprocal-rank fusion (RRF, k=60) of keyword + semantic | broad questions; a good default |
+| `hybrid` (**default**) | reciprocal-rank fusion (RRF, k=60) of keyword + semantic — the local embedding model participates on every search | best for most questions |
+| `keyword` | BM25 exact-term search | identifiers, file names, error codes, exact API names |
+| `semantic` | embedding-vector cosine similarity only | the topic may be discussed using different words than your query |
 
 The Advisor is actively prompted to pick a mode deliberately: keyword for
 exactness, semantic for paraphrase/concept recall, hybrid for broad recall.
@@ -491,6 +491,37 @@ src/
 ## API Configuration
 
 CC-lite supports both **Anthropic Messages API** (natively) and **OpenAI-compatible APIs**. The shim can use either Chat Completions or the newer Responses API depending on the provider and model you configure.
+
+### Multi-provider WebUI (`cclite config`) — recommended
+
+The easiest way to configure providers is the local WebUI:
+
+```bash
+cclite config   # opens http://127.0.0.1:1511
+```
+
+The page lets you:
+
+- register any number of providers (OpenAI-compatible or Anthropic-compatible; local servers like Ollama/LM Studio work too — API key optional there),
+- pull each provider's model list with one click (`GET /models`),
+- route each **scope** to a different provider + model:
+  | scope | role |
+  |---|---|
+  | `main` | planner — the big model driving the conversation |
+  | `subagent` | worker — the small model doing tool execution / subagent work |
+  | `advisor` | reviewer — the Advisor tool's model (optional) |
+
+  A classic split: main = a frontier cloud model for planning, subagent = a
+  cheap/local small model for the grunt work — across different vendors.
+
+Configuration is stored at `~/.claude/providers.json` (plain JSON, `0600`
+permissions). The server binds **127.0.0.1 only** and stops when the
+`cclite config` command exits. A running CLI picks up edits on the next
+request (no restart needed). `--port <n>` or `CCLITE_CONFIG_PORT` changes
+the port; `--no-open` skips the browser.
+
+Routing wins over the env vars below; scopes left unrouted fall back to the
+env-driven behavior, so existing setups keep working unchanged.
 
 Note: Unlike the upstream Claude Code, CC-lite does **not** support OAuth login via claude.ai. All authentication is done via API keys.
 

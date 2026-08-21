@@ -119,9 +119,9 @@ CONVERSATION HISTORY:
 - It is NOT pre-sent in your context — you must actively call the tool to read it
 - Use \`action: "index"\` to browse recent messages (role, length, tool names, pagination)
 - Use \`action: "search"\` with \`query\` to locate relevant messages. Choose the search mode deliberately:
-  - \`mode: "keyword"\` (default) - BM25 exact-term search. Best for identifiers, file names, error codes, API names.
-  - \`mode: "semantic"\` - embedding vector similarity. Best when the topic may be discussed in different words than your query uses.
-  - \`mode: "hybrid"\` - fuses keyword and semantic rankings. A good default for broad questions.
+  - \`mode: "hybrid"\` (default) - fuses keyword and semantic rankings via the local embedding model. Best for most questions.
+  - \`mode: "keyword"\` - BM25 exact-term search only. Best for identifiers, file names, error codes, API names.
+  - \`mode: "semantic"\` - embedding vector similarity only. Best when the topic may be discussed in different words than your query uses.
   - Search output labels the embedding backend in use; an "approximate local fallback" note means the local embedding model is unavailable/disabled - lean toward keyword mode for exactness in that case.
 - Use \`action: "read"\` with specific message IDs to fetch the detailed content of only the messages you need
 - Be selective — index or search first, then read only the messages relevant to the question

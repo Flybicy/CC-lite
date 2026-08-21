@@ -6,6 +6,7 @@ import {
   type ModelName,
   parseUserSpecifiedModel,
 } from '../utils/model/model.js'
+import { resolveModelProfileModel } from '../utils/model/modelProfiles.js'
 import { isModelAllowed } from '../utils/model/modelAllowlist.js'
 
 // The value of the selector is a full model name that can be used directly in
@@ -35,6 +36,7 @@ export function useMainLoopModel(): ModelName {
     mainLoopModel ??
     (process.env.ANTHROPIC_MODEL ||
       process.env.OPENAI_MODEL ||
+      resolveModelProfileModel('main') ||
       settingsModelProfiles?.main?.model) ??
     null
 
