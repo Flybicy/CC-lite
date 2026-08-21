@@ -384,6 +384,16 @@ EOF
   chmod +x "$bypass" 2>/dev/null || true
   ok "Installed: $bypass"
 
+  # ccliteweb: same CLI, but opens the local config WebUI directly.
+  local web="$INSTALL_DIR/ccliteweb"
+  cat > "$web" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+exec "${INSTALL_DIR}/cclite" web "\$@"
+EOF
+  chmod +x "$web" 2>/dev/null || true
+  ok "Installed: $web"
+
   if [ -f "$LIB_DIR/verify-embeddings.js" ]; then
     local verify="$INSTALL_DIR/cclite-verify-embeddings"
     cat > "$verify" <<EOF
@@ -473,18 +483,18 @@ printf "    ${CYAN}cclite${RESET}                           # interactive REPL\n
 printf "    ${CYAN}cclite-bypass${RESET}                    # interactive REPL with bypassPermissions\n"
 printf "    ${CYAN}cclite -p \"your prompt\"${RESET}          # one-shot mode\n"
 printf "    ${CYAN}cclite-verify-embeddings${RESET}          # re-check the local semantic model\n"
-printf "    ${CYAN}cclite config${RESET}                     # WebUI at 127.0.0.1:1511 - providers + pro/plus/se models\n"
+printf "    ${CYAN}ccliteweb${RESET}                     # WebUI at 127.0.0.1:1511 - providers + pro/plus/se models\n"
 echo ""
 printf "  ${BOLD}Recommended: configure providers via the local WebUI:${RESET}\n"
-printf "    ${CYAN}cclite config${RESET}    # save several providers, then bind the pro / plus / se models\n"
+printf "    ${CYAN}ccliteweb${RESET}    # save several providers, then bind the pro / plus / se models\n"
 printf "                     # pro  = main loop, plus = advisor, se = subagents\n"
 printf "                     # saving applies on the next request - no restart\n"
-printf "                     # busy port? it scans upward, or use: cclite config --port 1600\n"
+printf "                     # busy port? it scans upward, or use: ccliteweb --port 1600\n"
 echo ""
 printf "  ${BOLD}Or set your API key via env vars:${RESET}\n"
 printf "    ${CYAN}export ANTHROPIC_API_KEY=\"sk-ant-...\"${RESET}\n"
 echo ""
-printf "  ${BOLD}Also support OpenAI Chat Completions APIs (env, or use `cclite config`):${RESET}\n"
+printf "  ${BOLD}Also support OpenAI Chat Completions APIs (env, or use `ccliteweb`):${RESET}\n"
 printf "    ${CYAN}export CLAUDE_CODE_USE_OPENAI=1${RESET}\n"
 printf "    ${CYAN}export OPENAI_BASE_URL=http://.../v1${RESET}\n"
 echo ""

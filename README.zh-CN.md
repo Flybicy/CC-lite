@@ -267,12 +267,13 @@ CC-lite 同时支持 **Anthropic Messages API**（原生）与 **OpenAI 兼容 A
 Chat Completions 或新版 Responses API）。与上游不同：**不支持** claude.ai OAuth 登录，
 全部通过 API Key 认证。
 
-### 多供应商 WebUI（`cclite config`）——推荐
+### 多供应商 WebUI（`ccliteweb`）——推荐
 
 最省事的配置方式是本地 WebUI：
 
 ```bash
-cclite config   # 打开 http://127.0.0.1:1511
+ccliteweb   # 打开 http://127.0.0.1:1511
+#(别名：`cclite config`、`cclite web` 仍然有效)
 ```
 
 页面上可以：
@@ -298,6 +299,11 @@ Linux/SSH 环境下会自动跳过开浏览器，只打印地址。
 
 三档绑定生效时优先于下面的环境变量；没绑定的档位完全走原有 env 逻辑，
 存量用法不受影响。
+
+主请求重试全部失败（超时 / 5xx / 429）时，会自动沿档降级一次：pro → plus → se。
+4xx 参数错误、401/403 认证、404 模型不存在不会触发降级 —— 这些错换一家
+还是同样错，降级只是把真错埋在第二个供应商之下。命令行 `--fallbackModel <id>`
+可覆盖这条链。
 
 ### Anthropic Messages API
 ```bash

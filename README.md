@@ -492,12 +492,13 @@ src/
 
 CC-lite supports both **Anthropic Messages API** (natively) and **OpenAI-compatible APIs**. The shim can use either Chat Completions or the newer Responses API depending on the provider and model you configure.
 
-### Multi-provider WebUI (`cclite config`) — recommended
+### Multi-provider WebUI (`ccliteweb`) — recommended
 
 The easiest way to configure providers is the local WebUI:
 
 ```bash
-cclite config   # opens http://127.0.0.1:1511
+ccliteweb   # opens http://127.0.0.1:1511
+# (alias: `cclite config` and `cclite web` still work)
 ```
 
 The page lets you:
@@ -516,7 +517,7 @@ The page lets you:
 
 Configuration is stored at `~/.claude/providers.json` (plain JSON, `0600`
 permissions). The server binds **127.0.0.1 only** (with Host/Origin checks that
-reject DNS rebinding) and stops when the `cclite config` command exits. Saves
+reject DNS rebinding) and stops when the `ccliteweb` command exits. Saves
 are **hot-reloaded**: a running CLI picks up edits on its next request, no
 restart. Port precedence is `--port <n>` > `CCLITE_CONFIG_PORT` > `1511`; if the
 port is taken the server scans upward for a free one and prints the real URL.
@@ -525,6 +526,12 @@ Linux/SSH sessions.
 
 Tier bindings win over the env vars below; unbound tiers fall back to the
 env-driven behavior, so existing setups keep working unchanged.
+
+When the bound model fails after retries (timeouts, 5xx, 429), the request
+transparently falls back one tier at a time: pro → plus → se. 4xx user
+errors (bad params, auth) do NOT trigger fallback; they fail fast rather
+than masking the real config problem under a second vendor. CLI flag
+`--fallbackModel <id>` overrides the chain when set.
 
 Note: Unlike the upstream Claude Code, CC-lite does **not** support OAuth login via claude.ai. All authentication is done via API keys.
 

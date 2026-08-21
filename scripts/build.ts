@@ -75,10 +75,18 @@ function getDevVersion(baseVersion: string): string {
 }
 
 function getVersionChangelog(): string {
-  return (
+  // Single-line, single-digit shell-safe summary. Bun's `--define K=V` value
+  // is passed on the command line on Windows; multi-line values or shell
+  // metacharacters (parens, `&`, `^`) make cmd mis-parse the argv and the
+  // build dies with "Unterminated string literal at defines.json:1:1".
+  const raw =
     runCommand(['git', 'log', '--format=%h %s', '-20']) ??
     'Local development build'
-  )
+  return raw
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .join('; ')
+    .replace(/[()&^|<>]/g, '')
 }
 
 const defaultFeatures = ['VOICE_MODE']

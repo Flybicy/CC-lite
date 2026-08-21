@@ -3562,8 +3562,8 @@ async function run(): Promise<CommanderCommand> {
   });
 
 
-  // cclite config — local WebUI for the provider registry + pro/plus/se tiers
-  program.command('config').description('Open the local WebUI (http://127.0.0.1:1511) to configure providers and the pro/plus/se models').option('--port <number>', 'Port to listen on (default 1511, or CCLITE_CONFIG_PORT)').option('--no-open', 'Do not open the browser automatically').action(async (opts: {
+  // ccliteweb / cclite config — local WebUI for the provider registry + pro/plus/se tiers
+  const runConfigWebUI = async (opts: {
     port?: string;
     open?: boolean;
   }) => {
@@ -3612,7 +3612,19 @@ async function run(): Promise<CommanderCommand> {
       process.on('SIGINT', shutdown);
       process.on('SIGTERM', shutdown);
     });
-  });
+  };
+
+  program.command('web')
+    .description('Open the local WebUI (http://127.0.0.1:1511) to configure providers and the pro/plus/se models')
+    .option('--port <number>', 'Port to listen on (default 1511, or CCLITE_CONFIG_PORT)')
+    .option('--no-open', 'Do not open the browser automatically')
+    .action(runConfigWebUI);
+  // Back-compat alias; the new canonical name is `ccliteweb` (see install.sh).
+  program.command('config')
+    .description('Alias of `cclite web` — kept for back-compat')
+    .option('--port <number>', 'Port to listen on (default 1511, or CCLITE_CONFIG_PORT)')
+    .option('--no-open', 'Do not open the browser automatically')
+    .action(runConfigWebUI);
 
   // claude server
   if (feature('DIRECT_CONNECT')) {

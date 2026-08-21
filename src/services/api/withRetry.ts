@@ -113,6 +113,25 @@ function isStaleConnectionError(error: unknown): boolean {
   return details?.code === 'ECONNRESET' || details?.code === 'EPIPE'
 }
 
+/**
+ * Should exhausting retries on this error trigger a tier fallback?
+ *
+ * We only want to fall back when retrying *the same* request against a
+ * different provider has a chance of succeeding — network/transport faults
+ * (APIConnectionError), 5xx, and 429 rate limits. 4xx (400 invalid params,
+ * 401/403 auth, 404 model not found) would fail identically on the next
+ * tier, so falling back only buries the real problem under a second error.
+ */
+function shouldTriggerTierFallback(error: unknown): boolean {
+  if (error instanceof APIConnectionError) return true
+  if (error instanceof APIError) {
+    const status = error.status
+    if (status === undefined) return true
+    return status === 429 || status >= 500
+  }
+  return true
+}
+
 export interface RetryContext {
   maxTokensOverride?: number
   model: string
@@ -353,6 +372,16 @@ export async function* withRetry<T>(
       const persistent =
         isPersistentRetryEnabled() && isTransientCapacityError(error)
       if (attempt > maxRetries && !persistent) {
+        // CC-lite tier fallback: when the user picked a tier codename and a
+        // fallback target exists, give the request one more chance on the
+        // lower tier instead of a hard failure. Skipped for 4xx user errors
+        // (auth/config issues), which would repeat verbatim on the next tier.
+        if (options.fallbackModel && shouldTriggerTierFallback(error)) {
+          throw new FallbackTriggeredError(
+            options.model,
+            options.fallbackModel,
+          )
+        }
         throw new CannotRetryError(error, retryContext)
       }
 

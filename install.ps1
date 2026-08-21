@@ -350,6 +350,15 @@ bun "$bundle" --permission-mode bypassPermissions %*
   Set-Content -Path (Join-Path $InstallDir "cclite-bypass.cmd") -Value $bypassCmd -Encoding ASCII
   Write-Ok "Installed: $(Join-Path $InstallDir 'cclite-bypass.cmd')"
 
+  # ccliteweb: opens the local config WebUI directly (alias of `cclite web`).
+  $webCmd = @"
+@echo off
+setlocal
+bun "$bundle" web %*
+"@
+  Set-Content -Path (Join-Path $InstallDir "ccliteweb.cmd") -Value $webCmd -Encoding ASCII
+  Write-Ok "Installed: $(Join-Path $InstallDir 'ccliteweb.cmd')"
+
   $verifyJs = Join-Path $LibDir "verify-embeddings.js"
   if (Test-Path $verifyJs) {
     $verifyCmd = @"
@@ -407,10 +416,10 @@ function Main {
   Write-Host "    cclite                       # interactive REPL"
   Write-Host "    cclite -p `"your prompt`"            # one-shot mode"
   Write-Host "    cclite-verify-embeddings            # re-check the local semantic model"
-  Write-Host "    cclite config                     # WebUI at 127.0.0.1:1511 - providers + pro/plus/se models"
+  Write-Host "    ccliteweb                          # WebUI at 127.0.0.1:1511 - providers + pro/plus/se models"
   Write-Host ""
   Write-Host "  Recommended: configure providers via the local WebUI:" -ForegroundColor White
-  Write-Host "    cclite config    # save several providers, then bind the pro / plus / se models"
+  Write-Host "    ccliteweb        # save several providers, then bind the pro / plus / se models"
   Write-Host "                     # pro = main loop, plus = advisor, se = subagents"
   Write-Host "                     # saving applies on the next request - no restart"
   Write-Host ""

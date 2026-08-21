@@ -57,6 +57,8 @@ import {
 } from './utils/messages.js'
 import { generateToolUseSummary } from './services/toolUseSummary/toolUseSummaryGenerator.js'
 import { prependUserContext, appendSystemContext } from './utils/api.js'
+import { isTierAlias } from './utils/model/aliases.js'
+import { resolveTierModel } from './utils/model/modelProfiles.js'
 import {
   createAttachmentMessage,
   filterDuplicateMemoryAttachments,
@@ -212,6 +214,11 @@ type State = {
   pendingToolUseSummary: Promise<ToolUseSummaryMessage | null> | undefined
   stopHookActive: boolean | undefined
   turnCount: number
+  // The original tier codename the user asked for ('pro' / 'plus' / 'se'),
+  // preserved across automatic fallbacks so a pro→plus downgrade can itself
+  // fall back to se. Undefined when the user passed a concrete model id and
+  // no tier routing applies.
+  tierCodenameOfCurrentChain: string | undefined
   // Why the previous iteration continued. Undefined on first iteration.
   // Lets tests assert recovery paths fired without inspecting message contents.
   transition: Continue | undefined
@@ -256,12 +263,25 @@ async function* queryLoop(
     userContext,
     systemContext,
     canUseTool,
-    fallbackModel,
     querySource,
     maxTurns,
     skipCacheWrite,
   } = params
   const deps = params.deps ?? productionDeps()
+
+  // CC-lite tier fallback: when the user asks for a tier codename (pro/plus/se)
+  // and API errors exhaust retries, degrade one tier at a time (pro→plus→se→env).
+  // Only active when the caller did NOT pass an explicit --fallbackModel; that
+  // flag is the user's own override and wins. Unbound tiers in the chain are
+  // skipped: pro binding missing → undefined (no auto-fallback). Recomputed
+  // per iteration so a pro→plus fallback itself can fall back to se.
+  const explicitFallback = params.fallbackModel
+  const fallbackForIteration = (codename: string): string | undefined => {
+    if (!isTierAlias(codename) || codename === 'se') return undefined
+    if (!resolveTierModel(codename)) return undefined
+    const next = codename === 'pro' ? 'plus' : 'se'
+    return resolveTierModel(next) ? next : undefined
+  }
 
   // Mutable cross-iteration state. The loop body destructures this at the top
   // of each iteration so reads stay bare-name (`messages`, `toolUseContext`).
@@ -275,6 +295,11 @@ async function* queryLoop(
     maxOutputTokensRecoveryCount: 0,
     hasAttemptedReactiveCompact: false,
     turnCount: 1,
+    tierCodenameOfCurrentChain: isTierAlias(
+      params.toolUseContext.options.mainLoopModel,
+    )
+      ? params.toolUseContext.options.mainLoopModel
+      : undefined,
     pendingToolUseSummary: undefined,
     transition: undefined,
   }
@@ -577,6 +602,15 @@ async function* queryLoop(
         permissionMode === 'plan' &&
         doesMostRecentAssistantMessageExceed200k(messagesForQuery),
     })
+    // Resolve the tier-aware fallback lazily per iteration, so after a
+    // pro→plus downgrade we can fall back plus→se on the next replay. An
+    // explicit --fallbackModel wins; otherwise we only chain between bound
+    // tiers and stop at the first unbound one. We consult the codename
+    // recorded in state — options.mainLoopModel gets overwritten with a
+    // concrete model id after a fallback, but the codename must persist.
+    const fallbackModel =
+      explicitFallback ??
+      fallbackForIteration(state.tierCodenameOfCurrentChain ?? '')
 
     queryCheckpoint('query_setup_end')
 
@@ -895,6 +929,16 @@ async function* queryLoop(
         } catch (innerError) {
           if (innerError instanceof FallbackTriggeredError && fallbackModel) {
             // Fallback was triggered - switch model and retry
+            // Advance the codename chain so a repeated failure can degrade
+            // again (pro→plus→se). We record the tier we just stepped down
+            // to; if the next iteration's fallback also fails, its successor
+            // is picked via this chain.
+            if (isTierAlias(fallbackModel)) {
+              state = {
+                ...state,
+                tierCodenameOfCurrentChain: fallbackModel,
+              }
+            }
             currentModel = fallbackModel
             attemptWithFallback = true
 
