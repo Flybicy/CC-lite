@@ -214,7 +214,11 @@ check_bun() {
 }
 
 install_bun() {
-  curl -fsSL https://bun.sh/install | bash </dev/null
+  # `</dev/null` goes on the outer curl, not on bash: bash needs the pipe as
+  # stdin to read the install script, so redirecting ITS stdin to /dev/null
+  # makes it exit immediately with "Failure writing output to destination"
+  # on the curl side.
+  curl -fsSL https://bun.sh/install </dev/null | bash
   # Source the updated profile so bun is on PATH for this session
   export BUN_INSTALL="${BUN_INSTALL:-$HOME/.bun}"
   export PATH="$BUN_INSTALL/bin:$PATH"
