@@ -228,6 +228,9 @@ import { getInitializationStatus } from '../lsp/manager.js'
 import { isToolFromMcpServer } from '../mcp/utils.js'
 import { withStreamingVCR, withVCR } from '../vcr.js'
 import { CLIENT_REQUEST_ID_HEADER, getAnthropicClient } from './client.js'
+import { isTierAlias } from '../../utils/model/aliases.js'
+import { tierForQuerySource } from '../../utils/providers/providerRegistry.js'
+import { tierNeeds1mBetaHeader } from '../../utils/providers/tierResolver.js'
 import {
   API_ERROR_MESSAGE_PREFIX,
   CUSTOM_OFF_SWITCH_MESSAGE,
@@ -1114,6 +1117,20 @@ async function* queryModel(
     options.querySource === 'hook_agent' ||
     options.querySource === 'verification_agent'
   const betas = getMergedBetas(options.model, { isAgenticQuery })
+
+  // CC-lite: a tier whose WebUI binding sets contextWindow above the 200K
+  // default needs Anthropic's 1M beta header even though the model string has
+  // no [1m] suffix (third-party Claude relays commonly require it past 200K).
+  // Only sent for anthropic-type providers; the OpenAI shim would ignore it.
+  if (!betas.includes(CONTEXT_1M_BETA_HEADER)) {
+    const betaTier =
+      options.tierCodename && isTierAlias(options.tierCodename)
+        ? options.tierCodename
+        : tierForQuerySource(options.querySource)
+    if (tierNeeds1mBetaHeader(betaTier)) {
+      betas.push(CONTEXT_1M_BETA_HEADER)
+    }
+  }
 
   // Read advisor model from env var.
   // The client-side AdvisorTool reads the same env var at call time.

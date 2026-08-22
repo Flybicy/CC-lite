@@ -285,7 +285,20 @@ export async function handleRequest(
         if (!cfg.providers.some(p => p.id === providerId)) {
           throw new Error(`tiers.${tier}: unknown provider "${providerId}"`)
         }
-        cfg.tiers[tier] = { providerId: providerId.trim(), model: model.trim() }
+        const rawWindow = (value as Record<string, unknown>).contextWindow
+        let contextWindow: number | undefined
+        if (rawWindow !== undefined && rawWindow !== null && rawWindow !== '') {
+          const n = typeof rawWindow === 'number' ? rawWindow : Number(rawWindow)
+          if (!Number.isInteger(n) || n <= 0) {
+            throw new Error(`tiers.${tier}.contextWindow must be a positive integer (tokens)`)
+          }
+          contextWindow = n
+        }
+        cfg.tiers[tier] = {
+          providerId: providerId.trim(),
+          model: model.trim(),
+          ...(contextWindow !== undefined ? { contextWindow } : {}),
+        }
       }
       saveProviderConfig(cfg)
       json(res, 200, { tiers: cfg.tiers })

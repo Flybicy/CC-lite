@@ -33,7 +33,7 @@ export const CONFIG_UI_PAGE = `<!DOCTYPE html>
   .tag { font-size:11px; padding:2px 8px; border-radius:999px; border:1px solid var(--line); color:var(--dim); }
   .tag.openai { color:#7fd0a0; border-color:#2c4a38; }
   .tag.anthropic { color:#e2a86b; border-color:#4a3a28; }
-  .tier-card { display:grid; grid-template-columns:150px 1fr 1fr; gap:10px; align-items:end; margin-bottom:10px; }
+  .tier-card { display:grid; grid-template-columns:130px 1fr 1fr 160px; gap:10px; align-items:end; margin-bottom:10px; }
   .tier-name { padding-bottom:9px; font-weight:600; }
   .tier-code { color:var(--accent); font-family:ui-monospace,Menlo,Consolas,monospace; }
   .tier-desc { color:var(--dim); font-weight:400; font-size:12px; display:block; }
@@ -176,6 +176,7 @@ function renderTiers(){
       + '<div><label>提供商</label><select id="tier_prov_'+t.key+'" data-tier="'+t.key+'">'+provOpts+'</select></div>'
       + '<div><label>模型</label><input id="tier_model_'+t.key+'" list="list_'+t.key+'" placeholder="模型名，如 gpt-4o / deepseek-chat" value="'+(b ? esc(b.model) : '')+'">'
       + '<datalist id="list_'+t.key+'">'+modelOptionsFor(b ? b.providerId : '')+'</datalist></div>'
+      + '<div><label>上下文窗口（token，留空=200K）</label><input id="tier_ctx_'+t.key+'" type="number" min="1" step="1000" placeholder="200000 / 1000000" value="'+(b && b.contextWindow ? b.contextWindow : '')+'"></div>'
       + '</div>'
   }).join('')
   // Keep the model datalist in sync with the selected provider, and clear a
@@ -274,7 +275,10 @@ async function saveTiers(){
     const pid = \$('tier_prov_'+t.key).value
     const model = \$('tier_model_'+t.key).value.trim()
     if (pid && !model){ toast(t.key + ' 选了提供商，请填模型名','err'); return }
-    body[t.key] = pid ? { providerId:pid, model:model } : null
+    const ctxRaw = \$('tier_ctx_'+t.key).value.trim()
+    const ctx = ctxRaw ? parseInt(ctxRaw, 10) : NaN
+    if (ctxRaw && (!Number.isInteger(ctx) || ctx <= 0)){ toast(t.key + ' 上下文窗口必须是正整数（token 数）','err'); return }
+    body[t.key] = pid ? { providerId:pid, model:model, ...(ctxRaw ? { contextWindow: ctx } : {}) } : null
   }
   try{ await api('/api/tiers','PUT',body); await reload(); toast('三档已保存，下一次请求即生效','ok') }
   catch(e){ toast('保存失败: '+e.message,'err') }

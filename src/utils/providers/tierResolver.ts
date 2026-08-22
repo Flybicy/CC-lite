@@ -50,6 +50,23 @@ export function resolveTierConnection(
   return resolveTierConnectionByTier(tierForQuerySource(querySource))
 }
 
+/** Explicit context window (tokens) configured on the tier binding, if any. */
+export function resolveTierContextWindow(tier: ModelTier): number | undefined {
+  return resolveTierProvider(tier)?.contextWindow
+}
+
+/**
+ * Whether this tier needs Anthropic's 1M-context beta header. Empty when the
+ * tier falls back to env or the provider speaks OpenAI (the beta is
+ * Anthropic-only and ignored — sometimes rejected — elsewhere).
+ */
+export function tierNeeds1mBetaHeader(tier: ModelTier): boolean {
+  const conn = resolveTierConnectionByTier(tier)
+  if (conn.source !== 'routing' || conn.type !== 'anthropic') return false
+  // 200K is the pre-beta Anthropic default; anything above needs the header.
+  return (resolveTierContextWindow(tier) ?? 0) > 200_000
+}
+
 /** Resolve connection details for an explicit tier. */
 export function resolveTierConnectionByTier(tier: ModelTier): TierResolution {
   const resolved = resolveTierProvider(tier)

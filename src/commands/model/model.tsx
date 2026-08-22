@@ -99,7 +99,10 @@ function formatTierLine(tier: ModelTier): string {
   if (!resolved) {
     return `${chalk.bold(tier.padEnd(5))} ${chalk.dim(`(${label})`)}  ${chalk.dim('未绑定 — 跟随环境变量/内置默认')}`
   }
-  return `${chalk.bold(tier.padEnd(5))} ${chalk.dim(`(${label})`)}  ${resolved.model} ${chalk.dim(`— ${resolved.provider.label}`)}`
+  const windowSuffix = resolved.contextWindow
+    ? chalk.dim(` · ${resolved.contextWindow >= 1_000_000 ? `${resolved.contextWindow / 1_000_000}M` : `${Math.round(resolved.contextWindow / 1_000)}K`} ctx`)
+    : ''
+  return `${chalk.bold(tier.padEnd(5))} ${chalk.dim(`(${label})`)}  ${resolved.model} ${chalk.dim(`— ${resolved.provider.label}`)}${windowSuffix}`
 }
 
 function SetModelAndClose({

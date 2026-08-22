@@ -120,3 +120,42 @@ describe('provider custom headers', () => {
     }
   })
 })
+
+describe('tier contextWindow', () => {
+  const CTX_CFG: ProviderConfig = {
+    version: 2,
+    providers: [
+      { id: 'a', label: 'A', type: 'anthropic', baseURL: 'https://a.example.com', apiKey: '', models: [] },
+      { id: 'o', label: 'O', type: 'openai', baseURL: 'https://o.example.com/v1', apiKey: '', models: [] },
+    ],
+    tiers: {
+      pro: { providerId: 'a', model: 'm1', contextWindow: 1_000_000 },
+      plus: { providerId: 'o', model: 'm2', contextWindow: 128_000 },
+      se: { providerId: 'a', model: 'm3' },
+    },
+  }
+
+  it('resolves the configured window per tier', async () => {
+    const { resolveTierContextWindow } = await import('./tierResolver.js')
+    saveProviderConfig(CTX_CFG)
+    expect(resolveTierContextWindow('pro')).toBe(1_000_000)
+    expect(resolveTierContextWindow('plus')).toBe(128_000)
+    expect(resolveTierContextWindow('se')).toBeUndefined()
+  })
+
+  it('only asks for the 1M beta header on anthropic providers above 200K', async () => {
+    const { tierNeeds1mBetaHeader } = await import('./tierResolver.js')
+    saveProviderConfig(CTX_CFG)
+    expect(tierNeeds1mBetaHeader('pro')).toBe(true)
+    expect(tierNeeds1mBetaHeader('plus')).toBe(false) // openai provider
+    expect(tierNeeds1mBetaHeader('se')).toBe(false) // no window configured
+  })
+
+  it('feeds getContextWindowForModel through the tier codename and scope', async () => {
+    const { getContextWindowForModel } = await import('../context.js')
+    saveProviderConfig(CTX_CFG)
+    expect(getContextWindowForModel('pro')).toBe(1_000_000)
+    // Resolved model id: scope fallback maps main -> pro
+    expect(getContextWindowForModel('m1', [], 'main')).toBe(1_000_000)
+  })
+})

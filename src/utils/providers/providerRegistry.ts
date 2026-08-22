@@ -93,6 +93,10 @@ export const ProviderEntrySchema = z.object({
 export const TierBindingSchema = z.object({
   providerId: z.string().trim().min(1),
   model: z.string().trim().min(1),
+  // Explicit context window in tokens. Third-party models are invisible to
+  // the (firstParty-only) capability probe, so without this they are treated
+  // as 200K even when the upstream supports 1M.
+  contextWindow: z.number().int().positive().optional(),
 })
 
 /** Legacy alias — v1 called these "routing entries". */
@@ -132,6 +136,8 @@ export interface ResolvedTierProvider {
   scope: ModelScope
   provider: ProviderEntry
   model: string
+  /** Optional explicit context window (tokens) from the tier binding. */
+  contextWindow?: number
 }
 
 /** Legacy alias — same shape, `scope` was the primary key in v1. */
@@ -245,7 +251,7 @@ export function resolveTierProvider(
   if (!binding) return null
   const provider = cfg.providers.find(p => p.id === binding.providerId)
   if (!provider) return null
-  return { tier, scope: TIER_TO_SCOPE[tier], provider, model: binding.model }
+  return { tier, scope: TIER_TO_SCOPE[tier], provider, model: binding.model, contextWindow: binding.contextWindow }
 }
 
 /** Legacy entry point: resolve by scope name instead of tier codename. */
