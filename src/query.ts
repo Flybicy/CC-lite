@@ -769,6 +769,12 @@ async function* queryLoop(
                 return appState.toolPermissionContext
               },
               model: currentModel,
+              // The tier codename this iteration resolves to ('pro' / 'plus'
+              // / 'se'), so getAnthropicClient connects to THIS tier's
+              // provider — not the source-inferred one. Without this a
+              // manual /model switch or a failover would only change the
+              // model string while the request still went to pro's provider.
+              tierCodename: state.tierCodenameOfCurrentChain,
               ...(config.gates.fastModeEnabled && {
                 fastMode: appState.fastMode,
               }),

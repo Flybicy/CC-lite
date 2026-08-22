@@ -14,7 +14,11 @@ import {
   getIsNonInteractiveSession,
   getSessionId,
 } from '../../bootstrap/state.js'
-import { resolveTierConnection } from '../../utils/providers/tierResolver.js'
+import {
+  resolveTierConnection,
+  resolveTierConnectionByTier,
+} from '../../utils/providers/tierResolver.js'
+import { isTierAlias } from '../../utils/model/aliases.js'
 import { isDebugToStdErr, logForDebugging } from '../../utils/debug.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
 
@@ -44,12 +48,18 @@ export async function getAnthropicClient({
   model,
   fetchOverride,
   source,
+  tierOverride,
 }: {
   apiKey?: string
   maxRetries: number
   model?: string
   fetchOverride?: ClientOptions['fetch']
   source?: string
+  // CC-lite: caller knows which tier codename is actually serving this
+  // request (manual /model switch or an in-flight fallback). When set and
+  // bound, it wins over inferring the tier from `source` — otherwise every
+  // fallback would keep hitting the original tier's provider.
+  tierOverride?: string
 }): Promise<Anthropic> {
   const containerId = process.env.CLAUDE_CODE_CONTAINER_ID
   const remoteSessionId = process.env.CLAUDE_CODE_REMOTE_SESSION_ID
@@ -85,7 +95,10 @@ export async function getAnthropicClient({
   // tier (pro / plus / se) to a provider, connect to that provider instead of
   // the env-driven default. The bound model string itself was already selected
   // upstream via resolveModelProfileModel() / the tier alias resolver.
-  const tierConn = resolveTierConnection(source)
+  const tierConn =
+    tierOverride !== undefined && isTierAlias(tierOverride)
+      ? resolveTierConnectionByTier(tierOverride)
+      : resolveTierConnection(source)
 
   await (tierConn.source === 'routing'
     ? Promise.resolve()

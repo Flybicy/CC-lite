@@ -674,6 +674,13 @@ export function assistantMessageToMessageParam(
 export type Options = {
   getToolPermissionContext: () => Promise<ToolPermissionContext>
   model: string
+  // CC-lite: the tier codename currently serving this request ('pro' /
+  // 'plus' / 'se'), when the user picked one via /model. The codename (not
+  // the querySource) must drive the provider connection, otherwise manual
+  // tier switches and automatic fallbacks only change the model string while
+  // the traffic still goes to the original tier's provider — same key, same
+  // quota, same error.
+  tierCodename?: string
   toolChoice?: BetaToolChoiceTool | BetaToolChoiceAuto | undefined
   isNonInteractiveSession: boolean
   extraToolSchemas?: BetaToolUnion[]
@@ -819,6 +826,7 @@ export async function* executeNonStreamingRequest(
     model: string
     fetchOverride?: Options['fetchOverride']
     source: string
+    tierCodename?: string
   },
   retryOptions: {
     model: string
@@ -846,6 +854,7 @@ export async function* executeNonStreamingRequest(
         model: clientOptions.model,
         fetchOverride: clientOptions.fetchOverride,
         source: clientOptions.source,
+        tierOverride: clientOptions.tierCodename,
       }),
     async (anthropic, attempt, context) => {
       const start = Date.now()
@@ -1773,12 +1782,13 @@ async function* queryModel(
     queryCheckpoint('query_client_creation_start')
     const generator = withRetry(
       () =>
-        getAnthropicClient({
-          maxRetries: 0, // Disabled auto-retry in favor of manual implementation
-          model: options.model,
-          fetchOverride: options.fetchOverride,
-          source: options.querySource,
-        }),
+      getAnthropicClient({
+        maxRetries: 0, // Disabled auto-retry in favor of manual implementation
+        model: options.model,
+        fetchOverride: options.fetchOverride,
+        source: options.querySource,
+        tierOverride: options.tierCodename,
+      }),
       async (anthropic, attempt, context) => {
         attemptNumber = attempt
         isFastModeRequest = context.fastMode ?? false
@@ -2519,7 +2529,7 @@ async function* queryModel(
           : 'other') as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
       })
       const result = yield* executeNonStreamingRequest(
-        { model: options.model, source: options.querySource },
+        { model: options.model, source: options.querySource, tierCodename: options.tierCodename },
         {
           model: options.model,
           fallbackModel: options.fallbackModel,
@@ -2615,7 +2625,7 @@ async function* queryModel(
       try {
         // Fall back to non-streaming mode
         const result = yield* executeNonStreamingRequest(
-          { model: options.model, source: options.querySource },
+          { model: options.model, source: options.querySource, tierCodename: options.tierCodename },
           {
             model: options.model,
             fallbackModel: options.fallbackModel,

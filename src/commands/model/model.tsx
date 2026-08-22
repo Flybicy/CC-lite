@@ -19,7 +19,7 @@ import {
   isFastModeSupportedByModel,
 } from '../../utils/fastMode.js'
 import { formatTokenCount, getModelProfile, resolveModelProfileModel } from '../../utils/model/modelProfiles.js'
-import { MODEL_ALIASES } from '../../utils/model/aliases.js'
+import { MODEL_ALIASES, isTierAlias } from '../../utils/model/aliases.js'
 import {
   MODEL_TIERS,
   TIER_LABELS,
@@ -54,7 +54,21 @@ function ShowAllProfiles({
       ? resolveAppliedEffort(effectiveModel, effortValue)
       : undefined
   const mainProfile = getModelProfile('main')
-  const mainParts = [
+
+  // Tier codenames have no intrinsic context window / effort profile, so the
+  // upstream "auto · auto" columns read as broken. Show the tier's bound
+  // provider instead — that is the information the user actually picks with.
+  const activeTier =
+    mainLoopModel !== null && isTierAlias(mainLoopModel)
+      ? resolveTierProvider(mainLoopModel)
+      : null
+  const mainParts = activeTier
+    ? [
+        renderModelLabel(mainLoopModel),
+        activeTier.provider.label,
+        activeTier.provider.type === 'openai' ? 'openai-compat' : 'anthropic',
+      ]
+    : [
     renderModelLabel(mainLoopModel),
     mainProfile.contextWindowTokens ? formatTokenCount(mainProfile.contextWindowTokens) : 'auto',
     effectiveEffort ?? 'auto',
