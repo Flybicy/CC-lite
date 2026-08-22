@@ -288,7 +288,7 @@ export function LogoV2() {
     let t13;
     const advisorEffort = advisorModel ? resolveAppliedEffort(advisorModel, undefined, 'advisor') : undefined;
     const advisorEffortSuffix = advisorEffort !== undefined ? `(${String(advisorEffort)})` : '';
-    const compactModelLine = advisorModel ? `${modelDisplayName} · ${advisorModel}${advisorEffortSuffix}` : modelDisplayName;
+    const compactModelLine = advisorModel && advisorModel !== model ? `${modelDisplayName} · ${advisorModel}${advisorEffortSuffix}` : modelDisplayName;
     if ($[35] !== compactModelLine) {
       t13 = <Text dimColor={true}>{compactModelLine}</Text>;
       $[35] = compactModelLine;
@@ -335,7 +335,7 @@ export function LogoV2() {
   const welcomeMessage_0 = formatWelcomeMessage(username);
   const advisorEffort_0 = advisorModel ? resolveAppliedEffort(advisorModel, undefined, 'advisor') : undefined;
   const advisorEffortSuffix_0 = advisorEffort_0 !== undefined ? `(${String(advisorEffort_0)})` : '';
-  const modelLine = advisorModel ? `${modelDisplayName} · ${advisorModel}${advisorEffortSuffix_0}` : modelDisplayName;
+  const modelLine = advisorModel && advisorModel !== model ? `${modelDisplayName} · ${advisorModel}${advisorEffortSuffix_0}` : modelDisplayName;
   const cwdAvailableWidth_0 = agentName ? LEFT_PANEL_MAX_WIDTH - 1 - stringWidth(agentName) - 3 : LEFT_PANEL_MAX_WIDTH;
   const truncatedCwd_0 = truncatePath(cwd, Math.max(cwdAvailableWidth_0, 10));
   const cwdLine = agentName ? `@${agentName} · ${truncatedCwd_0}` : truncatedCwd_0;

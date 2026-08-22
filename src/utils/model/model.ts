@@ -362,6 +362,12 @@ export function renderModelSetting(setting: ModelName | ModelAlias): string {
   if (setting === 'opusplan') {
     return 'Opus Plan'
   }
+  // Tier codenames render as `Pro · <resolved model>` so the welcome line and
+  // condensed logo show both the codename the user picked and the concrete
+  // model it will actually call (e.g. "Pro · deepseek-chat").
+  if (isTierAlias(setting)) {
+    return `${capitalize(setting)} · ${parseUserSpecifiedModel(setting)}`
+  }
   if (isModelAlias(setting)) {
     return capitalize(setting)
   }

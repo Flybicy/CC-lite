@@ -79,9 +79,10 @@ export function CondensedLogo() {
   const advisorModel = getAdvisorModelFromProfiles(_settings?.modelProfiles);
   const advisorEffort = advisorModel ? resolveAppliedEffort(advisorModel, undefined, 'advisor') : undefined;
   const advisorEffortSuffix = advisorEffort !== undefined ? `(${String(advisorEffort)})` : '';
-  const displayName = advisorModel
-    ? `${modelDisplayName}${effortSuffix} · ${advisorModel}${advisorEffortSuffix}`
-    : `${modelDisplayName}${effortSuffix}`;
+  const displayName =
+    advisorModel && advisorModel !== model
+      ? `${modelDisplayName}${effortSuffix} · ${advisorModel}${advisorEffortSuffix}`
+      : `${modelDisplayName}${effortSuffix}`;
   const {
     shouldSplit,
     truncatedModel,
