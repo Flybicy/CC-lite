@@ -7,6 +7,7 @@ import {
   parseUserSpecifiedModel,
 } from '../utils/model/model.js'
 import { resolveModelProfileModel } from '../utils/model/modelProfiles.js'
+import { isTierAlias } from '../utils/model/aliases.js'
 import { isModelAllowed } from '../utils/model/modelAllowlist.js'
 
 // The value of the selector is a full model name that can be used directly in
@@ -41,10 +42,13 @@ export function useMainLoopModel(): ModelName {
     null
 
   // Match the allowlist gate in getUserSpecifiedModelSetting()
-  const model = parseUserSpecifiedModel(
+  const allowed =
     specified && isModelAllowed(specified)
       ? specified
-      : getDefaultMainLoopModelSetting(),
-  )
+      : getDefaultMainLoopModelSetting()
+  // Keep a tier codename (pro/plus/se) unresolved: query.ts keys the
+  // pro→plus→se failover chain off the codename, and each request resolves it
+  // against the live providers.json so WebUI re-binds take effect hot.
+  const model = isTierAlias(allowed) ? allowed : parseUserSpecifiedModel(allowed)
   return model
 }

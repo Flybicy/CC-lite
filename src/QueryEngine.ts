@@ -62,8 +62,10 @@ import { getInMemoryErrors } from './utils/log.js'
 import { countToolCalls, SYNTHETIC_MESSAGES } from './utils/messages.js'
 import {
   getMainLoopModel,
+  getUserSpecifiedModelSetting,
   parseUserSpecifiedModel,
 } from './utils/model/model.js'
+import { isTierAlias } from './utils/model/aliases.js'
 import { loadAllPluginsCacheOnly } from './utils/plugins/pluginLoader.js'
 import {
   type ProcessUserInputContext,
@@ -271,9 +273,15 @@ export class QueryEngine {
     }
 
     const initialAppState = getAppState()
+    // Keep a tier codename (pro/plus/se) as-is: downstream call sites resolve
+    // it per request (hot re-bind from the WebUI) and the fallback chain in
+    // query.ts keys off the codename — resolving it here would freeze the
+    // provider+model and disable pro→plus→se failover entirely.
     const initialMainLoopModel = userSpecifiedModel
-      ? parseUserSpecifiedModel(userSpecifiedModel)
-      : getMainLoopModel()
+      ? isTierAlias(userSpecifiedModel)
+        ? userSpecifiedModel
+        : parseUserSpecifiedModel(userSpecifiedModel)
+      : (getUserSpecifiedModelSetting() ?? getMainLoopModel())
 
     const initialThinkingConfig: ThinkingConfig = thinkingConfig
       ? thinkingConfig
