@@ -114,17 +114,43 @@ function isStaleConnectionError(error: unknown): boolean {
 }
 
 /**
+ * Why the tier fallback fired. `balance` means the upstream account is out of
+ * money / quota — retrying the original tier is pointless until the user
+ * tops up, so the downgrade is sticky (never auto-restore). `transient`
+ * covers timeouts, 5xx and 429: the original tier may recover any minute, so
+ * we restore it on the next successful iteration.
+ */
+export type FallbackReason = 'balance' | 'transient'
+
+/**
+ * Insufficient-balance detection. OpenRouter-style gateways return HTTP 402;
+ * Anthropic and many OpenAI-compatible relays return 400/403 with a message
+ * about the credit balance (domestic relays often phrase it in Chinese).
+ */
+export function isBalanceError(error: unknown): boolean {
+  if (!(error instanceof APIError)) return false
+  if (error.status === 402) return true
+  const extra =
+    'error' in error && error.error !== null && typeof error.error === 'object'
+      ? JSON.stringify(error.error)
+      : ''
+  return /credit balance|insufficient|quota exceeded|余额|欠费|充值/i.test(
+    `${error.message ?? ''} ${extra}`,
+  )
+}
+
+/**
  * Should exhausting retries on this error trigger a tier fallback?
  *
- * We only want to fall back when retrying *the same* request against a
- * different provider has a chance of succeeding — network/transport faults
- * (APIConnectionError), 5xx, and 429 rate limits. 4xx (400 invalid params,
+ * We fall back on network/transport faults (APIConnectionError), 5xx, 429
+ * rate limits, and balance errors (sticky). Other 4xx (400 invalid params,
  * 401/403 auth, 404 model not found) would fail identically on the next
  * tier, so falling back only buries the real problem under a second error.
  */
 function shouldTriggerTierFallback(error: unknown): boolean {
   if (error instanceof APIConnectionError) return true
   if (error instanceof APIError) {
+    if (isBalanceError(error)) return true
     const status = error.status
     if (status === undefined) return true
     return status === 429 || status >= 500
@@ -176,6 +202,7 @@ export class FallbackTriggeredError extends Error {
   constructor(
     public readonly originalModel: string,
     public readonly fallbackModel: string,
+    public readonly reason: FallbackReason = 'transient',
   ) {
     super(`Model fallback triggered: ${originalModel} -> ${fallbackModel}`)
     this.name = 'FallbackTriggeredError'
@@ -347,10 +374,12 @@ export async function* withRetry<T>(
               provider: getAPIProviderForStatsig(),
             })
 
-            // Throw special error to indicate fallback was triggered
+            // Throw special error to indicate fallback was triggered.
+            // 529 overload is by definition transient.
             throw new FallbackTriggeredError(
               options.model,
               options.fallbackModel,
+              'transient',
             )
           }
 
@@ -380,6 +409,7 @@ export async function* withRetry<T>(
           throw new FallbackTriggeredError(
             options.model,
             options.fallbackModel,
+            isBalanceError(error) ? 'balance' : 'transient',
           )
         }
         throw new CannotRetryError(error, retryContext)

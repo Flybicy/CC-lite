@@ -219,10 +219,32 @@ type State = {
   // fall back to se. Undefined when the user passed a concrete model id and
   // no tier routing applies.
   tierCodenameOfCurrentChain: string | undefined
+  // Set after a transient (timeout/5xx/429) fallback produced a successful
+  // assistant iteration. The NEXT loop iteration switches back to the chain
+  // head — "降级调一次就跑通就换回来". Not set for balance fallbacks, which
+  // are sticky: the upstream is out of money, retrying it just repeats 402s.
+  pendingRestoreToChainHead: boolean
   // Why the previous iteration continued. Undefined on first iteration.
   // Lets tests assert recovery paths fired without inspecting message contents.
   transition: Continue | undefined
 }
+
+// Session-persistent knobs carried on toolUseContext.options across turns.
+// Not part of the upstream options type; prefixed so collisions are obvious.
+type TierFallbackSessionExtras = {
+  // Codename the user originally picked (e.g. 'pro'). Captured once per
+  // session and restored after a transient fallback succeeds.
+  ccLiteTierHome?: string
+  // Balance fallbacks are sticky: we do not climb back to a tier whose
+  // provider still has no credit. Once set, stays set for the session.
+  ccLiteTierSticky?: boolean
+  // Total automatic tier fallbacks this session. Capped at
+  // MAX_TIER_FALLBACKS so a wedged gateway cannot ping-pong models forever.
+  ccLiteFallbackRounds?: number
+}
+
+/** Maximum auto tier downgrades per session before we give up and error. */
+const MAX_TIER_FALLBACKS = 5
 
 export async function* query(
   params: QueryParams,
@@ -269,6 +291,23 @@ async function* queryLoop(
   } = params
   const deps = params.deps ?? productionDeps()
 
+  const chainExtras =
+    params.toolUseContext.options as unknown as TierFallbackSessionExtras
+  const startModel = params.toolUseContext.options.mainLoopModel
+
+  // Session restore: last turn ended on a transient fallback that succeeded —
+  // the original tier is likely healthy again, so give it another shot. If it
+  // wedges again this turn, we degrade once more (up to the session cap).
+  // Sticky (balance) fallbacks skip this entirely: no credit won't fix itself.
+  if (
+    chainExtras.ccLiteTierHome &&
+    !chainExtras.ccLiteTierSticky &&
+    startModel !== chainExtras.ccLiteTierHome &&
+    isTierAlias(chainExtras.ccLiteTierHome)
+  ) {
+    params.toolUseContext.options.mainLoopModel = chainExtras.ccLiteTierHome
+  }
+
   // CC-lite tier fallback: when the user asks for a tier codename (pro/plus/se)
   // and API errors exhaust retries, degrade one tier at a time (pro→plus→se→env).
   // Only active when the caller did NOT pass an explicit --fallbackModel; that
@@ -277,6 +316,11 @@ async function* queryLoop(
   // per iteration so a pro→plus fallback itself can fall back to se.
   const explicitFallback = params.fallbackModel
   const fallbackForIteration = (codename: string): string | undefined => {
+    // Session cap: after MAX_TIER_FALLBACKS automatic downgrades we stop
+    // masking the outage and surface the error instead.
+    if ((chainExtras.ccLiteFallbackRounds ?? 0) >= MAX_TIER_FALLBACKS) {
+      return undefined
+    }
     if (!isTierAlias(codename) || codename === 'se') return undefined
     if (!resolveTierModel(codename)) return undefined
     const next = codename === 'pro' ? 'plus' : 'se'
@@ -295,13 +339,15 @@ async function* queryLoop(
     maxOutputTokensRecoveryCount: 0,
     hasAttemptedReactiveCompact: false,
     turnCount: 1,
-    tierCodenameOfCurrentChain: isTierAlias(
-      params.toolUseContext.options.mainLoopModel,
-    )
-      ? params.toolUseContext.options.mainLoopModel
+    tierCodenameOfCurrentChain: isTierAlias(startModel)
+      ? startModel
       : undefined,
+    pendingRestoreToChainHead: false,
     pendingToolUseSummary: undefined,
     transition: undefined,
+  }
+  if (isTierAlias(startModel) && chainExtras.ccLiteTierHome === undefined) {
+    chainExtras.ccLiteTierHome = startModel
   }
   const budgetTracker = feature('TOKEN_BUDGET') ? createBudgetTracker() : null
 
@@ -595,6 +641,25 @@ async function* queryLoop(
 
     const appState = toolUseContext.getAppState()
     const permissionMode = appState.toolPermissionContext.mode
+
+    // Transient-fallback restore: the downgraded tier answered one iteration —
+    // switch back to the chain head for this iteration. If the head is still
+    // down, the retry loop below fails over again and burns one of the
+    // remaining fallback rounds.
+    if (
+      state.pendingRestoreToChainHead &&
+      state.tierCodenameOfCurrentChain &&
+      chainExtras.ccLiteTierHome &&
+      state.tierCodenameOfCurrentChain !== chainExtras.ccLiteTierHome
+    ) {
+      toolUseContext.options.mainLoopModel = chainExtras.ccLiteTierHome
+      state = {
+        ...state,
+        pendingRestoreToChainHead: false,
+        tierCodenameOfCurrentChain: chainExtras.ccLiteTierHome,
+      }
+    }
+
     let currentModel = getRuntimeMainLoopModel({
       permissionMode,
       mainLoopModel: toolUseContext.options.mainLoopModel,
@@ -862,6 +927,20 @@ async function* queryLoop(
             if (message.type === 'assistant') {
               assistantMessages.push(message)
 
+              // A complete assistant message on a downgraded tier proves the
+              // fallback provider works. Mark the chain head for restoration
+              // so the iteration-start check above climbs back on the next
+              // pass. Balance downgrades never set this — `ccLiteTierSticky`
+              // already moved the home pointer forward.
+              if (
+                state.tierCodenameOfCurrentChain !== undefined &&
+                chainExtras.ccLiteTierHome !== undefined &&
+                !chainExtras.ccLiteTierSticky &&
+                state.tierCodenameOfCurrentChain !== chainExtras.ccLiteTierHome
+              ) {
+                state = { ...state, pendingRestoreToChainHead: true }
+              }
+
               const msgToolUseBlocks = message.message.content.filter(
                 content => content.type === 'tool_use',
               ) as ToolUseBlock[]
@@ -929,6 +1008,15 @@ async function* queryLoop(
         } catch (innerError) {
           if (innerError instanceof FallbackTriggeredError && fallbackModel) {
             // Fallback was triggered - switch model and retry
+            // Count the round and, on balance errors, move the session's
+            // home pointer forward so we never climb back to a tier whose
+            // provider has no credit ("余额不足 → 切换了就不再换回来").
+            chainExtras.ccLiteFallbackRounds =
+              (chainExtras.ccLiteFallbackRounds ?? 0) + 1
+            if (innerError.reason === 'balance') {
+              chainExtras.ccLiteTierSticky = true
+              chainExtras.ccLiteTierHome = fallbackModel
+            }
             // Advance the codename chain so a repeated failure can degrade
             // again (pro→plus→se). We record the tier we just stepped down
             // to; if the next iteration's fallback also fails, its successor
@@ -989,7 +1077,9 @@ async function* queryLoop(
             // Yield system message about fallback — use 'warning' level so
             // users see the notification without needing verbose mode
             yield createSystemMessage(
-              `Switched to ${renderModelName(innerError.fallbackModel)} due to high demand for ${renderModelName(innerError.originalModel)}`,
+              innerError.reason === 'balance'
+                ? `${renderModelName(innerError.originalModel)} 余额不足或额度用尽，已切换为 ${renderModelName(innerError.fallbackModel)}（本会话继续使用该档，充值后手动 /model 切回）`
+                : `Switched to ${renderModelName(innerError.fallbackModel)} due to high demand for ${renderModelName(innerError.originalModel)}`,
               'warning',
             )
 

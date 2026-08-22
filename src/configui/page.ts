@@ -54,6 +54,7 @@ export const CONFIG_UI_PAGE = `<!DOCTYPE html>
   保存后<b>下一次请求立即生效</b>，无需重启 cclite。</p>
 
   <h2>三档模型（调用代号 <span class="tier-code">pro</span> / <span class="tier-code">plus</span> / <span class="tier-code">se</span>）</h2>
+  <p class="sub" style="margin-top:-6px">请求失败（超时 / 5xx / 429）时自动顺位降级 <b>pro → plus → se</b>，成功后下一轮自动换回高挡（最多自动降级 5 次）；余额不足 / 额度用尽会直接换到低档且<b>不再切回</b>，充值后用 <code>/model</code> 手动切换。也可在对话里用 <code>/model pro</code> / <code>/model plus</code> / <code>/model se</code> 随时手动指定。</p>
   <div class="card">
     <div id="tiers"></div>
     <div class="row" style="margin-top:8px">

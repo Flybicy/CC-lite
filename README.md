@@ -528,10 +528,15 @@ Tier bindings win over the env vars below; unbound tiers fall back to the
 env-driven behavior, so existing setups keep working unchanged.
 
 When the bound model fails after retries (timeouts, 5xx, 429), the request
-transparently falls back one tier at a time: pro → plus → se. 4xx user
-errors (bad params, auth) do NOT trigger fallback; they fail fast rather
-than masking the real config problem under a second vendor. CLI flag
-`--fallbackModel <id>` overrides the chain when set.
+transparently falls back one tier at a time: pro → plus → se. After a
+transient fallback succeeds, the chain climbs back to the original tier on
+the next iteration (retry budget caps at 5 automatic downgrades per
+session). Balance/quota errors (402 / "credit balance too low" style) are
+sticky: the downgrade stays for the rest of the session and never climbs
+back — recharge first, then switch with /model. 4xx user errors (bad
+params, 401/403 auth, 404) do NOT trigger fallback; they fail fast rather
+than masking the real config problem under a second vendor's error. CLI
+flag `--fallbackModel <id>` overrides the chain when set.
 
 Note: Unlike the upstream Claude Code, CC-lite does **not** support OAuth login via claude.ai. All authentication is done via API keys.
 

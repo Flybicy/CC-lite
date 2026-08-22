@@ -475,7 +475,9 @@ function getTierOptions(): ModelOption[] {
     if (!resolved) continue
     out.push({
       value: tier,
-      label: tier,
+      // Show the resolved model inline so the picker reads "pro (m-pro)" —
+      // what you see is what the next request will call.
+      label: `${tier} (${resolved.model})`,
       description: `${TIER_LABELS[tier].hint} — ${resolved.provider.label} / ${resolved.model}`,
     })
   }
