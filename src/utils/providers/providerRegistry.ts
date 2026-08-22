@@ -260,7 +260,10 @@ export function isTierBound(tier: ModelTier): boolean {
 /** Map a querySource string to the tier that should serve it. */
 export function tierForQuerySource(source: string | undefined): ModelTier {
   if (!source) return 'pro'
-  if (source === 'advisor') return 'plus'
+  // The Advisor follows the main loop: same provider, same model, same
+  // failover chain. Reviewing advice is only as good as the model giving it,
+  // and advisor calls are rare enough that sharing pro costs little.
+  if (source === 'advisor') return 'pro'
   if (source.startsWith('agent:')) return 'se'
   return 'pro'
 }

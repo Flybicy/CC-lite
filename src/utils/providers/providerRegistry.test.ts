@@ -139,12 +139,12 @@ describe('providerRegistry', () => {
   })
 
   it('maps query sources to tiers and legacy scopes', () => {
-    expect(tierForQuerySource('advisor')).toBe('plus')
+    expect(tierForQuerySource('advisor')).toBe('pro')
     expect(tierForQuerySource('agent:custom')).toBe('se')
     expect(tierForQuerySource('repl_main_thread')).toBe('pro')
     expect(tierForQuerySource(undefined)).toBe('pro')
 
-    expect(scopeForQuerySource('advisor')).toBe('advisor')
+    expect(scopeForQuerySource('advisor')).toBe('main')
     expect(scopeForQuerySource('agent:custom')).toBe('subagent')
     expect(scopeForQuerySource('repl_main_thread')).toBe('main')
     expect(scopeForQuerySource(undefined)).toBe('main')

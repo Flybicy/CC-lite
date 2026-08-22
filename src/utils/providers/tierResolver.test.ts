@@ -70,11 +70,11 @@ describe('resolveTierConnection', () => {
     expect(conn.scope).toBe('subagent')
   })
 
-  it('maps the advisor source to the plus tier', () => {
+  it('maps the advisor source to the pro tier (advisor follows the main loop)', () => {
     saveProviderConfig(CFG)
     const conn = resolveTierConnection('advisor')
-    expect(conn.tier).toBe('plus')
-    expect(conn.scope).toBe('advisor')
+    expect(conn.tier).toBe('pro')
+    expect(conn.scope).toBe('main')
   })
 
   it('falls back to env when the tier is unbound', () => {
