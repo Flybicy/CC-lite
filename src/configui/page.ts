@@ -89,9 +89,9 @@ export const CONFIG_UI_PAGE = `<!DOCTYPE html>
 <div class="toast" id="toast"></div>
 <script>
 const TIERS = [
-  { key:'pro',  name:'pro',  desc:'主模型 · 规划与主循环；请求失败自动降级到 plus' },
-  { key:'plus', name:'plus', desc:'中档 · Advisor 复盘；pro 失败时的降级目标' },
-  { key:'se',   name:'se',   desc:'经济档 · 子代理与工具干活；plus 失败时的降级目标' }
+  { key:'pro',  name:'pro',  desc:'主档位 · 默认主循环；请求失败自动降级到 plus' },
+  { key:'plus', name:'plus', desc:'第二档 · pro 失败时的顺位目标，完成一轮后换回 pro' },
+  { key:'se',   name:'se',   desc:'兜底档 · plus 失败时的顺位目标，不再自动降级' }
 ]
 var CFG = { providers:[], tiers:{} }
 

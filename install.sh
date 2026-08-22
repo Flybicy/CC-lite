@@ -491,7 +491,7 @@ printf "    ${CYAN}ccliteweb${RESET}                     # WebUI at 127.0.0.1:15
 echo ""
 printf "  ${BOLD}Recommended: configure providers via the local WebUI:${RESET}\n"
 printf "    ${CYAN}ccliteweb${RESET}    # save several providers, then bind the pro / plus / se models\n"
-printf "                     # pro  = main loop, plus = advisor, se = subagents\n"
+printf "                     # pro/plus/se = 三档代号, 失败自动顺次降级\n"
 printf "                     # saving applies on the next request - no restart\n"
 printf "                     # busy port? it scans upward, or use: ccliteweb --port 1600\n"
 echo ""

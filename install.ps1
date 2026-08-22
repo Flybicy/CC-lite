@@ -420,7 +420,7 @@ function Main {
   Write-Host ""
   Write-Host "  Recommended: configure providers via the local WebUI:" -ForegroundColor White
   Write-Host "    ccliteweb        # save several providers, then bind the pro / plus / se models"
-  Write-Host "                     # pro = main loop, plus = advisor, se = subagents"
+  Write-Host "                     # pro/plus/se = 三档代号, 失败自动顺次降级"
   Write-Host "                     # saving applies on the next request - no restart"
   Write-Host ""
   Write-Host "  Or set your Anthropic Messages API key:" -ForegroundColor White

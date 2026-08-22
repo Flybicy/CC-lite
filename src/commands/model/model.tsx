@@ -18,7 +18,7 @@ import {
   isFastModeEnabled,
   isFastModeSupportedByModel,
 } from '../../utils/fastMode.js'
-import { formatTokenCount, formatProfileSummary, getModelProfile, resolveModelProfileModel } from '../../utils/model/modelProfiles.js'
+import { formatTokenCount, getModelProfile, resolveModelProfileModel } from '../../utils/model/modelProfiles.js'
 import { MODEL_ALIASES } from '../../utils/model/aliases.js'
 import {
   MODEL_TIERS,
@@ -73,9 +73,6 @@ function ShowAllProfiles({
     lines.push(`  ${formatTierLine(tier)}`)
   }
   lines.push('  失败后自动顺次降级 pro → plus → se；余额不足降为粘性（不自动切回）')
-  lines.push('')
-  lines.push(`${chalk.bold('Advisor model')}:   ${formatProfileSummary(getModelProfile('advisor'))}`)
-  lines.push(`${chalk.bold('Subagent model')}:  ${formatProfileSummary(getModelProfile('subagent'))}`)
   lines.push('')
   lines.push(`Configure tiers with ${chalk.bold('ccliteweb')} (opens the WebUI). Run ${chalk.bold('/model <pro|plus|se>')} to switch, or ${chalk.bold('/model [model-id]')} for a specific model.`)
   onDone(lines.join('\n'))

@@ -506,11 +506,11 @@ The page lets you:
 - register and keep any number of providers (OpenAI-compatible or Anthropic-compatible; local servers like Ollama/LM Studio work too — API key optional there),
 - pull each provider's model list with one click (`GET /models`),
 - bind the **pro / plus / se** codenames to a provider + model each:
-  | codename | role | suggestion |
+  | codename | failover position | suggestion |
   |---|---|---|
-  | `pro` | planner — main loop and planning | your strongest cloud model |
-  | `plus` | mid tier — Advisor review / second opinion | a mid-priced model |
-  | `se` | economy — subagents and tool grunt work | a cheap or local small model |
+  | `pro` | main slot — serves the conversation by default | your strongest model |
+  | `plus` | first failover when pro fails | a mid-priced model |
+  | `se` | second failover when plus also fails | a cheap or local model |
 
   The codebase always calls models by codename (`/model pro`, `--model se`), so
   what a codename points at is decided entirely in the WebUI — mix vendors freely.
