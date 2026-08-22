@@ -82,3 +82,41 @@ describe('resolveTierConnection', () => {
     expect(conn.source).toBe('env')
   })
 })
+describe('provider custom headers', () => {
+  it('passes provider.headers through the resolved connection', () => {
+    saveProviderConfig({
+      version: 2,
+      providers: [
+        {
+          id: 'strict',
+          label: 'Strict GW',
+          type: 'anthropic',
+          baseURL: 'https://gw.example.com',
+          apiKey: 'sk-x',
+          models: [],
+          headers: {
+            'User-Agent': 'claude-cli/2.0.30 (external, cli)',
+            'x-app': 'cli',
+          },
+        },
+      ],
+      tiers: { plus: { providerId: 'strict', model: 'some-model' } },
+    })
+    const conn = resolveTierConnectionByTier('plus')
+    expect(conn.source).toBe('routing')
+    if (conn.source === 'routing') {
+      expect(conn.headers).toEqual({
+        'User-Agent': 'claude-cli/2.0.30 (external, cli)',
+        'x-app': 'cli',
+      })
+    }
+  })
+
+  it('omits headers when the provider has none', () => {
+    saveProviderConfig(CFG)
+    const conn = resolveTierConnectionByTier('pro')
+    if (conn.source === 'routing') {
+      expect(conn.headers).toBeUndefined()
+    }
+  })
+})

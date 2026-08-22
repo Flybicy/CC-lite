@@ -6,5 +6,7 @@
  */
 
 export function getClaudeCodeUserAgent(): string {
-  return `claude-code/${MACRO.VERSION}`
+  // Strict Anthropic-compatible gateways 401 unless the UA matches the
+  // official CLI shape (e.g. "claude-cli/2.0.30 (external, cli)").
+  return `claude-cli/${MACRO.VERSION} (external, cli)`
 }

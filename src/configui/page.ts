@@ -16,6 +16,7 @@ export const CONFIG_UI_PAGE = `<!DOCTYPE html>
   h2 { font-size:15px; margin:26px 0 10px; color:var(--text); }
   .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:12px; }
   label { display:block; color:var(--dim); font-size:12px; margin:10px 0 4px; }
+  textarea { width:100%; box-sizing:border-box; background:var(--bg); color:var(--fg); border:1px solid var(--border); border-radius:6px; padding:8px; font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; resize:vertical; }
   input, select { width:100%; background:#0d1017; border:1px solid var(--line); color:var(--text); border-radius:6px; padding:8px 10px; font-size:13px; }
   input:focus, select:focus { outline:none; border-color:var(--accent); }
   button { background:var(--accent); border:none; color:#fff; border-radius:6px; padding:8px 14px; font-size:13px; cursor:pointer; }
@@ -78,6 +79,8 @@ export const CONFIG_UI_PAGE = `<!DOCTYPE html>
     </div>
     <label>Base URL</label><input id="f_base" placeholder="http://127.0.0.1:11434/v1">
     <label>API Key（本地服务可留空）</label><input id="f_key" type="password" placeholder="sk-…（留空表示不修改）">
+    <label>自定义请求头（可选，JSON；严格的 Anthropic 网关可配 User-Agent / x-app）</label>
+    <textarea id="f_headers" rows="3" spellcheck="false" placeholder='{"User-Agent":"claude-cli/2.0.30 (external, cli)","x-app":"cli"}'></textarea>
     <div class="row" style="margin-top:14px">
       <div class="fit"><button id="fetchModels">拉取模型列表</button></div>
       <div class="fit"><button id="saveProv">保存提供商</button></div>
@@ -215,6 +218,7 @@ function editProv(id){
   \$('f_base').value = p.baseURL
   \$('f_key').value = ''
   \$('f_key').placeholder = '留空表示不修改现有 Key'
+  \$('f_headers').value = p.headers ? JSON.stringify(p.headers, null, 2) : ''
   \$('fetched').innerHTML = ''
   \$('editor').scrollIntoView({ behavior:'smooth', block:'center' })
 }
@@ -229,8 +233,18 @@ function editProv(id){
   else if (act === 'del') void delProv(id)
 }
 
+function readHeadersField(){
+  const raw = \$('f_headers').value.trim()
+  if (!raw) return undefined
+  const parsed = JSON.parse(raw)
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('请求头必须是 JSON 对象')
+  for (const k of Object.keys(parsed)){ if (typeof parsed[k] !== 'string') throw new Error('请求头 "'+k+'" 的值必须是字符串') }
+  return parsed
+}
 async function saveProv(){
-  const body = { id:\$('f_id').value||undefined, label:\$('f_label').value, type:\$('f_type').value, baseURL:\$('f_base').value, apiKey:\$('f_key').value }
+  let headers
+  try{ headers = readHeadersField() }catch(e){ toast('请求头 JSON 无效: '+e.message,'err'); return }
+  const body = { id:\$('f_id').value||undefined, label:\$('f_label').value, type:\$('f_type').value, baseURL:\$('f_base').value, apiKey:\$('f_key').value, headers:headers }
   try{
     await api('/api/providers','POST',body)
     clearForm()
@@ -240,7 +254,9 @@ async function saveProv(){
 }
 
 async function fetchPreview(){
-  const body = { id:\$('f_id').value||undefined, type:\$('f_type').value, baseURL:\$('f_base').value, apiKey:\$('f_key').value }
+  let headers
+  try{ headers = readHeadersField() }catch(e){ toast('请求头 JSON 无效: '+e.message,'err'); return }
+  const body = { id:\$('f_id').value||undefined, type:\$('f_type').value, baseURL:\$('f_base').value, apiKey:\$('f_key').value, headers:headers }
   \$('fetchModels').disabled = true
   try{
     const data = await api('/api/fetch-models-direct','POST',body)
@@ -265,7 +281,7 @@ async function saveTiers(){
 }
 
 function clearForm(){
-  \$('f_id').value=''; \$('f_label').value=''; \$('f_base').value=''; \$('f_key').value=''
+  \$('f_id').value=''; \$('f_label').value=''; \$('f_base').value=''; \$('f_key').value=''; \$('f_headers').value=''
   \$('f_key').placeholder='sk-…（留空表示不修改）'; \$('fetched').innerHTML=''
 }
 

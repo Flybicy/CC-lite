@@ -460,6 +460,23 @@ install_binary() {
   add_to_path
 }
 
+# Linux desktops: mouse-select copy and /copy write the system clipboard via
+# a native tool (OSC 52 is unsupported by GNOME Terminal and friends). Install
+# wl-copy (Wayland) or xclip (X11) best-effort; without one, copying falls
+# back to "written to /tmp" only.
+check_clipboard() {
+  [ "$OS" = "linux" ] || return 0
+  if command -v wl-copy &>/dev/null || command -v xclip &>/dev/null || command -v xsel &>/dev/null; then
+    ok "clipboard helper present"
+    return 0
+  fi
+  info "No clipboard helper found (wl-copy/xclip/xsel). Installing..."
+  if [ "${XDG_SESSION_TYPE:-}" = "wayland" ]; then
+    pkg_install wl-clipboard || warn "Copy to clipboard will still fall back to a temp file; install wl-clipboard manually for full support."
+  else
+    pkg_install xclip || warn "Copy to clipboard will still fall back to a temp file; install xclip manually for full support."
+  fi
+}
 # -------------------------------------------------------------------
 # Main
 # -------------------------------------------------------------------
@@ -472,6 +489,7 @@ check_os
 check_git
 check_bun
 check_rg
+check_clipboard
 echo ""
 
 clone_repo

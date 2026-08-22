@@ -31,6 +31,8 @@ export interface TierConnection {
   baseURL: string
   apiKey: string
   model: string
+  /** Provider-specific extra request headers (optional). */
+  headers?: Record<string, string>
 }
 
 export interface TierEnvFallback {
@@ -62,5 +64,6 @@ export function resolveTierConnectionByTier(tier: ModelTier): TierResolution {
     baseURL: provider.baseURL,
     apiKey: provider.apiKey,
     model,
+    headers: provider.headers,
   }
 }

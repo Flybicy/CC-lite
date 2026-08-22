@@ -113,7 +113,7 @@ async function fetchProviderModels(provider: ProviderEntry): Promise<string[]> {
   const isOpenAI = provider.type === 'openai'
   const url =
     isOpenAI || /\/v1$/.test(base) ? `${base}/models` : `${base}/v1/models`
-  const headers: Record<string, string> = {}
+  const headers: Record<string, string> = { ...(provider.headers ?? {}) }
   if (isOpenAI) {
     if (provider.apiKey) headers['authorization'] = `Bearer ${provider.apiKey}`
   } else {
@@ -169,6 +169,17 @@ export async function handleRequest(
       const baseURL = typeof body.baseURL === 'string' ? body.baseURL.trim() : ''
       const apiKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : ''
       const type = body.type === 'anthropic' ? 'anthropic' : 'openai'
+      const headers =
+        body.headers &&
+        typeof body.headers === 'object' &&
+        !Array.isArray(body.headers)
+          ? Object.fromEntries(
+              Object.entries(body.headers as Record<string, unknown>)
+                .filter(([k, v]) => typeof k === 'string' && typeof v === 'string')
+                .map(([k, v]) => [k.trim(), v as string])
+                .filter(([k]) => k.length > 0),
+            )
+          : undefined
       if (!label) throw new Error('label is required')
       if (!baseURL) throw new Error('baseURL is required')
       let parsedBase: URL
@@ -193,6 +204,7 @@ export async function handleRequest(
           type,
           // Empty apiKey on update keeps the stored key.
           apiKey: apiKey || cfg.providers[idx].apiKey,
+          headers,
         }
         cfg.providers[idx] = provider
       } else {
@@ -203,6 +215,7 @@ export async function handleRequest(
           baseURL,
           apiKey,
           models: [],
+          headers,
         }
         cfg.providers.push(provider)
       }
@@ -296,6 +309,16 @@ export async function handleRequest(
         baseURL: typeof body.baseURL === 'string' ? body.baseURL.trim() : '',
         apiKey: typedKey || storedKey,
         models: [],
+        headers:
+          body.headers &&
+          typeof body.headers === 'object' &&
+          !Array.isArray(body.headers)
+            ? (Object.fromEntries(
+                Object.entries(body.headers as Record<string, unknown>).filter(
+                  ([k, v]) => typeof k === 'string' && typeof v === 'string',
+                ),
+              ) as Record<string, string>)
+            : undefined,
       }
       if (!provider.baseURL) throw new Error('baseURL is required')
       const models = await fetchProviderModels(provider)

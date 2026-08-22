@@ -84,6 +84,10 @@ export const ProviderEntrySchema = z.object({
   baseURL: z.string().trim().min(1),
   apiKey: z.string().default(''),
   models: z.array(z.string().trim().min(1)).default([]),
+  // Per-provider extra request headers, merged last so they win over the
+  // built-in defaults (some Anthropic-compatible gateways require an exact
+  // User-Agent / x-app and 401 otherwise).
+  headers: z.record(z.string(), z.string()).optional(),
 })
 
 export const TierBindingSchema = z.object({

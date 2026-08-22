@@ -100,6 +100,13 @@ export async function getAnthropicClient({
       ? resolveTierConnectionByTier(tierOverride)
       : resolveTierConnection(source)
 
+  // Provider-scoped custom headers ride along with the routed connection, so
+  // a tier switch swaps them too. Merged last → the provider's explicit
+  // User-Agent / x-app / etc. win over the built-in defaults.
+  if (tierConn.source === 'routing' && tierConn.headers) {
+    Object.assign(defaultHeaders, tierConn.headers)
+  }
+
   await (tierConn.source === 'routing'
     ? Promise.resolve()
     : configureApiKeyHeaders(defaultHeaders, getIsNonInteractiveSession()))
