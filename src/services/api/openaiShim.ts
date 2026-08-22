@@ -33,10 +33,32 @@ import {
   resolveCodexApiCredentials,
   resolveProviderRequest,
 } from './providerConfig.js'
+import { APIError } from '@anthropic-ai/sdk'
 
 // ---------------------------------------------------------------------------
 // Types — minimal subset of Anthropic SDK types we need to produce
 // ---------------------------------------------------------------------------
+
+/**
+ * Convert an upstream non-2xx into an APIError so the retry/balance
+ * machinery upstream (withRetry.isBalanceError, shouldRetry) can classify it.
+ * Previously we threw plain Errors, which made every relay-side failure
+ * invisible to the tier fallback chain.
+ */
+function throwUpstreamError(
+  status: number,
+  errorBody: string,
+  label: string,
+): never {
+  const message = `${label} ${status}: ${errorBody}`
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(errorBody)
+  } catch {
+    parsed = undefined
+  }
+  throw new APIError(status, parsed as object | undefined, message, new Headers())
+}
 
 // ---------------------------------------------------------------------------
 // Message format conversion: Anthropic → OpenAI
@@ -818,7 +840,7 @@ class OpenAIShimMessages {
 
     if (!response.ok) {
       const errorBody = await response.text().catch(() => 'unknown error')
-      throw new Error(`OpenAI Responses API error ${response.status}: ${errorBody}`)
+      throwUpstreamError(response.status, errorBody, 'OpenAI Responses API error')
     }
 
     return response
@@ -943,7 +965,7 @@ class OpenAIShimMessages {
 
     if (!response.ok) {
       const errorBody = await response.text().catch(() => 'unknown error')
-      throw new Error(`OpenAI API error ${response.status}: ${errorBody}`)
+      throwUpstreamError(response.status, errorBody, 'OpenAI API error')
     }
 
     return response

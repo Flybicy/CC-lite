@@ -134,7 +134,9 @@ export function isBalanceError(error: unknown): boolean {
     'error' in error && error.error !== null && typeof error.error === 'object'
       ? JSON.stringify(error.error)
       : ''
-  return /credit balance|insufficient|quota exceeded|余额|欠费|充值/i.test(
+  // `预扣费` / `额度不足` cover one-api / new-api relays that phrase quota
+  // failures as "预扣费额度失败" with code `insufficient_user_quota`.
+  return /credit balance|insufficient[user_ ]?quota|quota exceeded|余额|欠费|充值|预扣费|额度不足/i.test(
     `${error.message ?? ''} ${extra}`,
   )
 }
@@ -422,6 +424,21 @@ export async function* withRetry<T>(
         !handledCloudAuthError &&
         (!(error instanceof APIError) || !shouldRetry(error))
       ) {
+        // Balance errors (402 / insufficient-quota style) are not retryable,
+        // so they never reach the retry-exhausted branch above — yet they are
+        // exactly the case a tier fallback exists for. Trigger it here instead
+        // of dying on the first attempt.
+        if (
+          options.fallbackModel &&
+          error instanceof APIError &&
+          isBalanceError(error)
+        ) {
+          throw new FallbackTriggeredError(
+            options.model,
+            options.fallbackModel,
+            'balance',
+          )
+        }
         throw new CannotRetryError(error, retryContext)
       }
 

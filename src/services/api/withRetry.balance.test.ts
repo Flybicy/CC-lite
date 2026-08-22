@@ -30,6 +30,19 @@ describe('isBalanceError', () => {
     expect(isBalanceError(makeApiError(429, 'insufficient_quota'))).toBe(true)
   })
 
+  it('flags one-api/new-api relay quota errors (403, insufficient_user_quota, 预扣费)', () => {
+    const body = JSON.stringify({
+      error: {
+        message:
+          '预扣费额度失败, 用户剩余额度: ＄0.189262, 需要预扣费额度: ＄0.300000',
+        type: 'new_api_error',
+        code: 'insufficient_user_quota',
+      },
+    })
+    const err = new APIError(403, JSON.parse(body), body, new Headers())
+    expect(isBalanceError(err)).toBe(true)
+  })
+
   it('does not flag a plain rate limit', () => {
     expect(isBalanceError(makeApiError(429, 'rate limit reached'))).toBe(false)
   })
