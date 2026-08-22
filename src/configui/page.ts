@@ -89,9 +89,9 @@ export const CONFIG_UI_PAGE = `<!DOCTYPE html>
 <div class="toast" id="toast"></div>
 <script>
 const TIERS = [
-  { key:'pro',  name:'pro',  desc:'主模型 · 规划与主循环，建议最强模型' },
-  { key:'plus', name:'plus', desc:'中档 · Advisor 复盘 / 第二意见' },
-  { key:'se',   name:'se',   desc:'经济档 · 子代理与工具干活，建议便宜或本地模型' }
+  { key:'pro',  name:'pro',  desc:'主模型 · 规划与主循环；请求失败自动降级到 plus' },
+  { key:'plus', name:'plus', desc:'中档 · Advisor 复盘；pro 失败时的降级目标' },
+  { key:'se',   name:'se',   desc:'经济档 · 子代理与工具干活；plus 失败时的降级目标' }
 ]
 var CFG = { providers:[], tiers:{} }
 

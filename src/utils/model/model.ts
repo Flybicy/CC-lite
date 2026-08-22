@@ -322,6 +322,12 @@ export function renderDefaultModelSetting(
   if (setting === 'opusplan') {
     return 'Opus 4.6 in plan mode, else Sonnet 4.6'
   }
+  // Tier codenames keep their codename in the label: `pro (deepseek-chat)`
+  // reads better in the UI than the bare resolved ID, and makes it obvious
+  // that re-binding the tier in ccliteweb changes what this points at.
+  if (isTierAlias(setting)) {
+    return renderModelName(setting)
+  }
   return renderModelName(parseUserSpecifiedModel(setting))
 }
 

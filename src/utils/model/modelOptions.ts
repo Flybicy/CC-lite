@@ -34,8 +34,8 @@ import { has1mContext } from '../context.js'
 import { getGlobalConfig } from '../config.js'
 import {
   MODEL_TIERS,
-  TIER_LABELS,
   resolveTierProvider,
+  type ModelTier,
 } from '../providers/providerRegistry.js'
 
 // @[MODEL LAUNCH]: Update all the available and default model option strings below.
@@ -478,10 +478,18 @@ function getTierOptions(): ModelOption[] {
       // Show the resolved model inline so the picker reads "pro (m-pro)" —
       // what you see is what the next request will call.
       label: `${tier} (${resolved.model})`,
-      description: `${TIER_LABELS[tier].hint} — ${resolved.provider.label} / ${resolved.model}`,
+      description: `${TIER_PICKER_DESCRIPTIONS[tier]} · ${resolved.provider.label} / ${resolved.model}`,
     })
   }
   return out
+}
+
+// Short picker strings that double as failover documentation — keep them one
+// line, the UI truncates long descriptions.
+const TIER_PICKER_DESCRIPTIONS: Record<ModelTier, string> = {
+  pro: '主模型 · 规划与主循环；失败自动降级到 plus',
+  plus: '中档 · Advisor 复盘；pro 失败时的降级目标',
+  se: '经济档 · 子代理与工具干活；plus 失败时的降级目标',
 }
 
 export function getModelOptions(fastMode = false): ModelOption[] {

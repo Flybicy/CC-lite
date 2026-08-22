@@ -21,6 +21,12 @@ import {
 import { formatTokenCount, formatProfileSummary, getModelProfile, resolveModelProfileModel } from '../../utils/model/modelProfiles.js'
 import { MODEL_ALIASES } from '../../utils/model/aliases.js'
 import {
+  MODEL_TIERS,
+  TIER_LABELS,
+  resolveTierProvider,
+  type ModelTier,
+} from '../../utils/providers/providerRegistry.js'
+import {
   checkOpus1mAccess,
   checkSonnet1mAccess,
 } from '../../utils/model/check1mAccess.js'
@@ -58,12 +64,31 @@ function ShowAllProfiles({
   if (mainLoopModelForSession) {
     lines.push(`  (overridden for this session: ${chalk.bold(renderModelLabel(mainLoopModelForSession))})`)
   }
+  // CC-lite tiers: always list all three codenames and the concrete model each
+  // one resolves to right now, so users can see what /model pro would call.
+  // Unbound tiers say "unbound" instead of the old "default · auto · auto".
+  lines.push('')
+  lines.push(chalk.bold('Tiers (pro / plus / se):'))
+  for (const tier of MODEL_TIERS) {
+    lines.push(`  ${formatTierLine(tier)}`)
+  }
+  lines.push('  失败后自动顺次降级 pro → plus → se；余额不足降为粘性（不自动切回）')
+  lines.push('')
   lines.push(`${chalk.bold('Advisor model')}:   ${formatProfileSummary(getModelProfile('advisor'))}`)
   lines.push(`${chalk.bold('Subagent model')}:  ${formatProfileSummary(getModelProfile('subagent'))}`)
   lines.push('')
-  lines.push(`Configure with ${chalk.bold('/config')}. Run ${chalk.bold('/model [model]')} to switch the main model temporary.`)
+  lines.push(`Configure tiers with ${chalk.bold('ccliteweb')} (opens the WebUI). Run ${chalk.bold('/model <pro|plus|se>')} to switch, or ${chalk.bold('/model [model-id]')} for a specific model.`)
   onDone(lines.join('\n'))
   return null
+}
+
+function formatTierLine(tier: ModelTier): string {
+  const resolved = resolveTierProvider(tier)
+  const label = TIER_LABELS[tier].hint.split('·')[0].trim()
+  if (!resolved) {
+    return `${chalk.bold(tier.padEnd(5))} ${chalk.dim(`(${label})`)}  ${chalk.dim('未绑定 — 跟随环境变量/内置默认')}`
+  }
+  return `${chalk.bold(tier.padEnd(5))} ${chalk.dim(`(${label})`)}  ${resolved.model} ${chalk.dim(`— ${resolved.provider.label}`)}`
 }
 
 function SetModelAndClose({

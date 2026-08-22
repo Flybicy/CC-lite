@@ -66,9 +66,9 @@ export const TIER_TO_SCOPE: Record<ModelTier, ModelScope> = {
 
 /** Human-facing blurbs, shared by the WebUI and the TUI. */
 export const TIER_LABELS: Record<ModelTier, { title: string; hint: string }> = {
-  pro: { title: 'pro', hint: '主模型 · 规划与主循环，建议最强模型' },
-  plus: { title: 'plus', hint: '中档 · Advisor 复盘/第二意见' },
-  se: { title: 'se', hint: '经济档 · 子代理与工具干活，建议便宜/本地模型' },
+  pro: { title: 'pro', hint: '主模型 · 规划与主循环，失败自动降级到 plus' },
+  plus: { title: 'plus', hint: '中档 · Advisor 复盘，pro 失败时的降级目标' },
+  se: { title: 'se', hint: '经济档 · 子代理与工具干活，plus 失败时的降级目标' },
 }
 
 export function isModelTier(value: unknown): value is ModelTier {
