@@ -1,8 +1,8 @@
 {
   "name": "cclite",
   "displayName": "CC-lite",
-  "description": "本地 CC-lite CLI 集成：终端聊天、一次性提问、分析选中代码，状态栏显示当前档位与模型",
-  "version": "1.0.0",
+  "description": "本地 CC-lite：侧边栏聊天面板（stream-json），终端命令，状态栏显示当前档位模型，导出对话",
+  "version": "1.1.0",
   "publisher": "local",
   "license": "MIT",
   "engines": {
@@ -14,42 +14,52 @@
     "Other"
   ],
   "activationEvents": [
-    "onStartupFinished"
+    "onStartupFinished",
+    "onView:cclite.chatView"
   ],
   "main": "./extension.js",
   "icon": "icon-blue-squid.png",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "cclite",
+          "title": "CC-lite",
+          "icon": "icon-blue-squid.svg"
+        }
+      ]
+    },
+    "views": {
+      "cclite": [
+        {
+          "id": "cclite.chatView",
+          "name": "对话",
+          "type": "webview",
+          "icon": "icon-blue-squid.svg"
+        }
+      ]
+    },
     "configuration": {
       "title": "CC-lite",
       "properties": {
         "cclite.cliPath": {
           "type": "string",
           "default": "",
-          "description": "cclite 可执行文件路径（留空则从 PATH 查找，例如 C:\\Users\\you\\AppData\\Roaming\\npm\\cclite.cmd）"
+          "description": "cclite 可执行文件路径（留空则从 PATH 查找）"
+        },
+        "cclite.permissionMode": {
+          "type": "string",
+          "enum": ["default", "acceptEdits", "bypassPermissions", "plan"],
+          "default": "acceptEdits",
+          "description": "侧边栏会话的权限模式；default 会在需要批准的工具上自动拒绝"
         }
       }
     },
     "commands": [
-      {
-        "command": "cclite.chat",
-        "title": "打开交互式会话",
-        "category": "CC-lite"
-      },
-      {
-        "command": "cclite.oneShot",
-        "title": "一次性提问 (-p)",
-        "category": "CC-lite"
-      },
-      {
-        "command": "cclite.fileAnalysis",
-        "title": "分析当前文件/选中代码",
-        "category": "CC-lite"
-      },
-      {
-        "command": "cclite.webui",
-        "title": "打开配置 WebUI (ccliteweb)",
-        "category": "CC-lite"
-      }
+      { "command": "cclite.chat", "title": "打开交互式会话（终端）", "category": "CC-lite" },
+      { "command": "cclite.oneShot", "title": "一次性提问 (-p)", "category": "CC-lite" },
+      { "command": "cclite.fileAnalysis", "title": "分析当前文件/选中代码", "category": "CC-lite" },
+      { "command": "cclite.webui", "title": "打开配置 WebUI (ccliteweb)", "category": "CC-lite" }
     ],
     "menus": {
       "editor/context": [
@@ -58,12 +68,6 @@
           "when": "editorIsOpen && !editorReadonly",
           "group": "navigation"
         }
-      ],
-      "commandPalette": [
-        { "command": "cclite.chat" },
-        { "command": "cclite.oneShot" },
-        { "command": "cclite.fileAnalysis" },
-        { "command": "cclite.webui" }
       ]
     }
   }
