@@ -292,7 +292,8 @@ function NotificationContent({
   //
   // tokenUsage can briefly drop to 0 mid-stream (between API updates).
   // A ref holds the last non-zero density so the footer doesn't blink.
-  const effortValue = resolveAppliedEffort(mainLoopModel, undefined);
+  const effortSetting = useAppState(s_e => s_e.effortValue);
+  const effortValue = resolveAppliedEffort(mainLoopModel, effortSetting);
   const displayWindow = getContextWindowForModel(mainLoopModel);
   const effectiveWindow = getEffectiveContextWindowSize(mainLoopModel);
   const autoCompactEnabled = isAutoCompactEnabled();
