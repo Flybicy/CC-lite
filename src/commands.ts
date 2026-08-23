@@ -156,7 +156,7 @@ import outputStyle from './commands/output-style/index.js'
 // remote-env removed (Anthropic online service)
 // extra-usage import removed (Anthropic billing stripped)
 // rate-limit-options removed (Anthropic online service)
-// effort removed (replaced by modelProfiles in /config)
+import effort from './commands/effort/index.js'
 import stats from './commands/stats/index.js'
 // insights.ts is 113KB (3200 lines, includes diffLines/html rendering). Lazy
 // shim defers the heavy module until /insights is actually invoked.
@@ -241,7 +241,7 @@ const COMMANDS = memoize((): Command[] => [
   cost,
   diff,
   // doctor removed
-  // effort removed
+  effort,
   exit,
   // fast removed
   files,
