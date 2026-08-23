@@ -2,6 +2,7 @@ import { buildTool, type Tool, type ToolDef, type ToolUseContext } from '../../T
 import type { Message } from '../../types/message.js'
 import {
   getAdvisorModel,
+  getSessionAdvisorModel,
   isAdvisorEnabled,
 } from '../../utils/advisor.js'
 import { createSubagentContext } from '../../utils/forkedAgent.js'
@@ -167,7 +168,9 @@ export const AdvisorTool = buildTool({
   },
 
   async call({ question }, context) {
-    const model = getAdvisorModel()
+    const model = getSessionAdvisorModel(
+      context.options as unknown as Parameters<typeof getSessionAdvisorModel>[0],
+    )
     if (!model) {
       throw new Error('Advisor is not configured. Set CLAUDE_CODE_ADVISOR_MODEL.')
     }

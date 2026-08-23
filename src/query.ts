@@ -241,6 +241,11 @@ type TierFallbackSessionExtras = {
   // Total automatic tier fallbacks this session. Capped at
   // MAX_TIER_FALLBACKS so a wedged gateway cannot ping-pong models forever.
   ccLiteFallbackRounds?: number
+  // Where the chain actually sits right now (home or a degraded tier).
+  // Tracked separately from home so a manual /model switch (startModel
+  // differs from current) can be told apart from "we left the turn on a
+  // degraded tier" — the former must win, the latter gets restored.
+  ccLiteTierCurrent?: string
 }
 
 /** Maximum auto tier downgrades per session before we give up and error. */
@@ -295,6 +300,27 @@ async function* queryLoop(
     params.toolUseContext.options as unknown as TierFallbackSessionExtras
   const startModel = params.toolUseContext.options.mainLoopModel
 
+  // Manual /model switch takes priority over every session-recovery rule:
+  // when the user's pick disagrees with where we actually left the chain
+  // (ccLiteTierCurrent), rebase the chain on the new pick and clear the
+  // sticky/balance and round counters. Without this, "upgrade back to pro"
+  // after a sticky balance downgrade (user topped up) was impossible, and a
+  // mid-session switch to plus got silently reset to pro by the restore
+  // below.
+  if (isTierAlias(startModel)) {
+    if (chainExtras.ccLiteTierCurrent === undefined) {
+      if (chainExtras.ccLiteTierHome === undefined) {
+        chainExtras.ccLiteTierHome = startModel
+      }
+      chainExtras.ccLiteTierCurrent = startModel
+    } else if (startModel !== chainExtras.ccLiteTierCurrent) {
+      chainExtras.ccLiteTierHome = startModel
+      chainExtras.ccLiteTierCurrent = startModel
+      chainExtras.ccLiteTierSticky = false
+      chainExtras.ccLiteFallbackRounds = 0
+    }
+  }
+
   // Session restore: last turn ended on a transient fallback that succeeded —
   // the original tier is likely healthy again, so give it another shot. If it
   // wedges again this turn, we degrade once more (up to the session cap).
@@ -302,10 +328,12 @@ async function* queryLoop(
   if (
     chainExtras.ccLiteTierHome &&
     !chainExtras.ccLiteTierSticky &&
-    startModel !== chainExtras.ccLiteTierHome &&
+    chainExtras.ccLiteTierCurrent !== undefined &&
+    chainExtras.ccLiteTierCurrent !== chainExtras.ccLiteTierHome &&
     isTierAlias(chainExtras.ccLiteTierHome)
   ) {
     params.toolUseContext.options.mainLoopModel = chainExtras.ccLiteTierHome
+    chainExtras.ccLiteTierCurrent = chainExtras.ccLiteTierHome
   }
 
   // CC-lite tier fallback: when the user asks for a tier codename (pro/plus/se)
@@ -339,16 +367,16 @@ async function* queryLoop(
     maxOutputTokensRecoveryCount: 0,
     hasAttemptedReactiveCompact: false,
     turnCount: 1,
-    tierCodenameOfCurrentChain: isTierAlias(startModel)
-      ? startModel
+    tierCodenameOfCurrentChain: isTierAlias(
+      params.toolUseContext.options.mainLoopModel,
+    )
+      ? params.toolUseContext.options.mainLoopModel
       : undefined,
     pendingRestoreToChainHead: false,
     pendingToolUseSummary: undefined,
     transition: undefined,
   }
-  if (isTierAlias(startModel) && chainExtras.ccLiteTierHome === undefined) {
-    chainExtras.ccLiteTierHome = startModel
-  }
+
   const budgetTracker = feature('TOKEN_BUDGET') ? createBudgetTracker() : null
 
   // task_budget.remaining tracking across compaction boundaries. Undefined
@@ -653,6 +681,7 @@ async function* queryLoop(
       state.tierCodenameOfCurrentChain !== chainExtras.ccLiteTierHome
     ) {
       toolUseContext.options.mainLoopModel = chainExtras.ccLiteTierHome
+      chainExtras.ccLiteTierCurrent = chainExtras.ccLiteTierHome
       state = {
         ...state,
         pendingRestoreToChainHead: false,
@@ -1032,6 +1061,7 @@ async function* queryLoop(
                 ...state,
                 tierCodenameOfCurrentChain: fallbackModel,
               }
+              chainExtras.ccLiteTierCurrent = fallbackModel
             }
             currentModel = fallbackModel
             attemptWithFallback = true
