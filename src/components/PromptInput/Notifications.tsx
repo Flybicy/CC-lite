@@ -10,6 +10,7 @@ import type { VerificationStatus } from '../../hooks/useApiKeyVerification.js';
 import { useIdeConnectionStatus } from '../../hooks/useIdeConnectionStatus.js';
 import type { IDESelection } from '../../hooks/useIdeSelection.js';
 import { useMainLoopModel } from '../../hooks/useMainLoopModel.js';
+import { renderModelSetting } from '../../utils/model/model.js';
 import { useVoiceEnabled } from '../../hooks/useVoiceEnabled.js';
 import { Box, Text } from '../../ink.js';
 import { useClaudeAiLimits } from '../../services/claudeAiLimitsHook.js';
@@ -365,7 +366,7 @@ function NotificationContent({
             <Text dimColor={!footerColor} color={footerColor}>
               {contextLine}
             </Text>
-            <Text dimColor>{` · ${effortValue ?? 'auto'}`}</Text>
+            <Text dimColor>{` · ${renderModelSetting(mainLoopModel)} · ${effortValue ?? 'auto'}`}</Text>
           </Text>
         </Box>
     </>;

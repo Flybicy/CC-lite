@@ -19,3 +19,5 @@ verify-embeddings.js
 
 # build artifacts
 *.tsbuildinfo
+
+editors/vscode/*.vsix

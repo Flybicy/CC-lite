@@ -1,0 +1,70 @@
+{
+  "name": "cclite",
+  "displayName": "CC-lite",
+  "description": "本地 CC-lite CLI 集成：终端聊天、一次性提问、分析选中代码，状态栏显示当前档位与模型",
+  "version": "1.0.0",
+  "publisher": "local",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "AI",
+    "Chat",
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./extension.js",
+  "icon": "icon-blue-squid.png",
+  "contributes": {
+    "configuration": {
+      "title": "CC-lite",
+      "properties": {
+        "cclite.cliPath": {
+          "type": "string",
+          "default": "",
+          "description": "cclite 可执行文件路径（留空则从 PATH 查找，例如 C:\\Users\\you\\AppData\\Roaming\\npm\\cclite.cmd）"
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "cclite.chat",
+        "title": "打开交互式会话",
+        "category": "CC-lite"
+      },
+      {
+        "command": "cclite.oneShot",
+        "title": "一次性提问 (-p)",
+        "category": "CC-lite"
+      },
+      {
+        "command": "cclite.fileAnalysis",
+        "title": "分析当前文件/选中代码",
+        "category": "CC-lite"
+      },
+      {
+        "command": "cclite.webui",
+        "title": "打开配置 WebUI (ccliteweb)",
+        "category": "CC-lite"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "cclite.fileAnalysis",
+          "when": "editorIsOpen && !editorReadonly",
+          "group": "navigation"
+        }
+      ],
+      "commandPalette": [
+        { "command": "cclite.chat" },
+        { "command": "cclite.oneShot" },
+        { "command": "cclite.fileAnalysis" },
+        { "command": "cclite.webui" }
+      ]
+    }
+  }
+}

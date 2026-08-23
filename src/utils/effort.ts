@@ -6,6 +6,9 @@ import { getFeatureValue_CACHED_MAY_BE_STALE } from '../services/analytics-stub.
 import { getAPIProvider } from './model/providers.js'
 import { get3PModelCapabilityOverride } from './model/modelSupportOverrides.js'
 import { isEnvTruthy } from './envUtils.js'
+import { isTierAlias } from './model/aliases.js'
+import { parseUserSpecifiedModel } from './model/model.js'
+import { isProviderRoutingActive } from './providers/providerRegistry.js'
 import type { EffortLevel } from 'src/entrypoints/sdk/runtimeTypes.js'
 
 export type { EffortLevel }
@@ -25,6 +28,11 @@ export function modelSupportsEffort(model: string): boolean {
   if (isEnvTruthy(process.env.CLAUDE_CODE_ALWAYS_ENABLE_EFFORT)) {
     return true
   }
+  // CC-lite tier codenames carry no capability info — resolve to the bound
+  // model first, so /effort works while a codename is in flight.
+  if (isTierAlias(model)) {
+    return modelSupportsEffort(parseUserSpecifiedModel(model))
+  }
   const supported3P = get3PModelCapabilityOverride(model, 'effort')
   if (supported3P !== undefined) {
     return supported3P
@@ -37,8 +45,12 @@ export function modelSupportsEffort(model: string): boolean {
   if (m.includes('haiku') || m.includes('sonnet') || m.includes('opus')) {
     return false
   }
-  // Default to true for unknown model strings on 1P.
-  return getAPIProvider() === 'firstParty'
+  // Default to true for unknown model strings on 1P — and for any model
+  // reached through a providers.json tier binding. 3P gateways cannot be
+  // capability-probed, but the user bound the model deliberately; if a
+  // gateway rejects the effort param it can be pinned off via
+  // ANTHROPIC_DEFAULT_*_MODEL_SUPPORTED_CAPABILITIES.
+  return getAPIProvider() === 'firstParty' || isProviderRoutingActive()
 }
 
 // @[MODEL LAUNCH]: Add the new model to the allowlist if it supports 'max' effort.
