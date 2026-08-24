@@ -2,7 +2,7 @@
   "name": "cclite",
   "displayName": "CC-lite",
   "description": "本地 CC-lite：侧边栏聊天面板（stream-json），终端命令，状态栏显示当前档位模型，导出对话",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "publisher": "local",
   "license": "MIT",
   "engines": {
@@ -59,9 +59,15 @@
       { "command": "cclite.chat", "title": "打开交互式会话（终端）", "category": "CC-lite" },
       { "command": "cclite.oneShot", "title": "一次性提问 (-p)", "category": "CC-lite" },
       { "command": "cclite.fileAnalysis", "title": "分析当前文件/选中代码", "category": "CC-lite" },
-      { "command": "cclite.webui", "title": "打开配置 WebUI (ccliteweb)", "category": "CC-lite" }
+      { "command": "cclite.newChat", "title": "新会话", "category": "CC-lite", "icon": "$(add)" },
+      { "command": "cclite.exportChat", "title": "导出对话为 Markdown", "category": "CC-lite", "icon": "$(export)" },
+      { "command": "cclite.webui", "title": "打开配置 WebUI", "category": "CC-lite" }
     ],
     "menus": {
+      "view/title": [
+        { "command": "cclite.newChat", "when": "view == cclite.chatView", "group": "navigation@1" },
+        { "command": "cclite.exportChat", "when": "view == cclite.chatView", "group": "navigation@2" }
+      ],
       "editor/context": [
         {
           "command": "cclite.fileAnalysis",

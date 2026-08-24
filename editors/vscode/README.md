@@ -5,9 +5,9 @@
 ## 功能
 
 - **侧边栏聊天面板**（活动栏鱿鱼图标）：直接在侧边栏和 cclite 对话，流式输出，工具调用可见
-  - 顶栏可切 `pro / plus / se` 档位与思考等级（auto–max，对应 CLI 的 `/effort`）
-  - 「新会话」重开会话；切换档位/思考等级会自动以新配置重开
-  - 「导出」把当前对话保存成 Markdown 文件
+  - 一体式输入框（仿 Codex）：输入框下方一排胶囊按钮 = ⚙ WebUI 配置 · pro/plus/se 档位 · 思考等级
+  - 视图标题栏右上：➕ 新会话、导出对话为 Markdown；切换档位/思考等级会以新配置重开会话
+  - **想放到右侧**：活动栏鱿鱼图标上右键 → "Move to Secondary Side Bar"（VS Code 会记住位置）
 - 状态栏常驻当前 pro 档模型（WebUI 改绑后自动刷新，点击打开侧边栏）
 - 终端命令兜底：交互会话、一次性提问、分析当前文件/选中代码、打开配置 WebUI
 
@@ -20,7 +20,7 @@
 
 ```bash
 npx @vscode/vsce package
-code --install-extension cclite-1.1.0.vsix
+code --install-extension cclite-1.2.0.vsix
 ```
 
 或在 VS Code：扩展面板 → `...` → **Install from VSIX...**

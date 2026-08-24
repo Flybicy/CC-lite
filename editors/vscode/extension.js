@@ -44,6 +44,12 @@ function readCurrentModelLabel() {
   return process.env.ANTHROPIC_MODEL || 'default';
 }
 
+// The ccliteweb shim is only created by some installers; `cclite config` is
+// the always-present alias, so the button survives PATH gaps.
+function cliWebuiCmd() {
+  return `${cliPath()} config`;
+}
+
 function shellQuote(s) {
   return `'${String(s).replace(/'/g, "'\\''")}'`;
 }
@@ -224,7 +230,7 @@ class ChatViewProvider {
         const text = (msg.text || '').trim();
         if (!text || this.busy || !this.session) return;
         if (!this.session.send(text)) {
-          this.post({ type: 'error', text: '会话已结束，请点击「新会话」' });
+          this.post({ type: 'error', text: '会话已结束，请点视图右上 ➕ 开新会话' });
           return;
         }
         this.busy = true;
@@ -325,49 +331,50 @@ function renderHtml(cspSource) {
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
 <style>
   body { font-family: var(--vscode-font-family); margin:0; padding:0; display:flex; flex-direction:column; height:100vh; }
-  #toolbar { display:flex; gap:6px; padding:6px; border-bottom:1px solid var(--vscode-panel-border); align-items:center; flex-wrap:wrap; }
-  #toolbar select, #toolbar button {
-    background: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground);
-    border:1px solid var(--vscode-dropdown-border); border-radius:3px; padding:2px 6px; font-size:12px; cursor:pointer;
-  }
-  #msgs { flex:1; overflow-y:auto; padding:8px; }
+  #msgs { flex:1; overflow-y:auto; padding:10px; }
   .msg { margin:6px 0; padding:8px 10px; border-radius:8px; white-space:pre-wrap; word-break:break-word; font-size:13px; line-height:1.5; }
-  .user { background: var(--vscode-input-background); border:1px solid var(--vscode-input-border); }
+  .user { background: var(--vscode-input-background); border:1px solid var(--vscode-input-border); margin-left:12%; }
   .assistant { background: var(--vscode-sideBar-background); }
-  .tool { color: var(--vscode-descriptionForeground); font-style:italic; font-size:12px; padding:2px 10px; }
-  .sys { color: var(--vscode-descriptionForeground); font-size:12px; padding:2px 10px; }
+  .tool, .sys { color: var(--vscode-descriptionForeground); font-size:12px; padding:2px 10px; }
+  .tool { font-style:italic; }
   .err { color: var(--vscode-errorForeground); font-size:12px; padding:2px 10px; white-space:pre-wrap; }
-  #inputbar { display:flex; gap:6px; padding:8px; border-top:1px solid var(--vscode-panel-border); }
-  #input { flex:1; background: var(--vscode-input-background); color: var(--vscode-input-foreground);
-    border:1px solid var(--vscode-input-border); border-radius:4px; padding:6px; resize:none; font-family:inherit; font-size:13px; }
-  #send { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border:none; border-radius:4px; padding:6px 14px; cursor:pointer; }
-  #send:disabled { opacity:.5; cursor:default; }
-  .spinner { color: var(--vscode-descriptionForeground); font-size:12px; padding:4px 10px; display:none; }
+  #composer { margin:8px; border:1px solid var(--vscode-input-border); border-radius:14px; background: var(--vscode-input-background); padding:8px 8px 6px; }
+  #input { width:100%; box-sizing:border-box; background:transparent; color: var(--vscode-input-foreground);
+    border:none; outline:none; resize:none; font-family:inherit; font-size:13px; min-height:36px; }
+  #controls { display:flex; align-items:center; gap:6px; margin-top:4px; }
+  .pill { background: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground);
+    border:1px solid var(--vscode-dropdown-border); border-radius:999px; padding:3px 10px; font-size:12px; cursor:pointer; }
+  .pill:hover { filter:brightness(1.15); }
+  select.pill { appearance:none; -webkit-appearance:none; text-align:center; }
+  #controls .spacer { flex:1; }
+  #send { width:30px; height:30px; border-radius:50%; border:none; cursor:pointer; font-size:15px; line-height:1;
+    background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+  #send:disabled { opacity:.4; cursor:default; }
+  .spinner { color: var(--vscode-descriptionForeground); font-size:12px; padding:0 12px 6px; display:none; }
 </style>
 </head>
 <body>
-  <div id="toolbar">
-    <select id="tier" title="模型档位">
-      <option value="pro">pro</option>
-      <option value="plus">plus</option>
-      <option value="se">se</option>
-    </select>
-    <select id="effort" title="思考等级">
-      <option value="auto">auto</option>
-      <option value="low">low</option>
-      <option value="medium">medium</option>
-      <option value="high">high</option>
-      <option value="max">max</option>
-    </select>
-    <button id="newchat" title="新会话">＋ 新会话</button>
-    <button id="export" title="导出对话为 Markdown">导出</button>
-    <button id="webui" title="配置供应商">WebUI</button>
-  </div>
   <div id="msgs"></div>
   <div class="spinner" id="spin">思考中…</div>
-  <div id="inputbar">
-    <textarea id="input" rows="2" placeholder="输入消息，Enter 发送，Shift+Enter 换行"></textarea>
-    <button id="send">发送</button>
+  <div id="composer">
+    <textarea id="input" placeholder="Do anything… (Enter 发送, Shift+Enter 换行)"></textarea>
+    <div id="controls">
+      <button class="pill" id="webui" title="配置供应商 (打开 WebUI)">⚙</button>
+      <select class="pill" id="tier" title="模型档位">
+        <option value="pro">pro</option>
+        <option value="plus">plus</option>
+        <option value="se">se</option>
+      </select>
+      <select class="pill" id="effort" title="思考等级">
+        <option value="auto">思考 auto</option>
+        <option value="low">思考 minimal</option>
+        <option value="medium">思考 medium</option>
+        <option value="high">思考 high</option>
+        <option value="max">思考 max</option>
+      </select>
+      <div class="spacer"></div>
+      <button id="send" title="发送">↑</button>
+    </div>
   </div>
 <script nonce="${nonce}">
   const vscode = acquireVsCodeApi();
@@ -397,8 +404,6 @@ function renderHtml(cspSource) {
   input.addEventListener('keydown', e => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
   });
-  document.getElementById('newchat').onclick = () => vscode.postMessage({ type: 'newChat' });
-  document.getElementById('export').onclick = () => vscode.postMessage({ type: 'export' });
   document.getElementById('webui').onclick = () => vscode.postMessage({ type: 'openWebui' });
   document.getElementById('tier').onchange = e => vscode.postMessage({ type: 'setTier', tier: e.target.value });
   document.getElementById('effort').onchange = e => vscode.postMessage({ type: 'setEffort', effort: e.target.value });
@@ -411,18 +416,16 @@ function renderHtml(cspSource) {
         document.getElementById('tier').value = m.tier;
         document.getElementById('effort').value = m.effort;
         currentAssistantEl = null;
-        el('sys', '新会话已开始（' + m.tier + ' · ' + m.effort + '）');
+        el('sys', '新会话（' + m.tier + ' · ' + m.effort + '）');
         break;
       case 'userMessage':
         el('user', m.text);
         currentAssistantEl = null;
         break;
       case 'assistantDelta':
-        if (!currentAssistantEl || !m.streaming) {
-          if (!currentAssistantEl || currentAssistantEl.dataset.final === '1') {
-            currentAssistantEl = el('assistant', '');
-            currentAssistantEl.dataset.final = '0';
-          }
+        if (!currentAssistantEl || currentAssistantEl.dataset.final === '1') {
+          currentAssistantEl = el('assistant', '');
+          currentAssistantEl.dataset.final = '0';
         }
         currentAssistantEl.textContent = m.text;
         if (!m.streaming) currentAssistantEl.dataset.final = '1';
@@ -494,6 +497,8 @@ function activate(context) {
   context.subscriptions.push(
     statusBar,
     { dispose: () => watcher && watcher.close() },
+    vscode.commands.registerCommand('cclite.newChat', () => provider.newSession()),
+    vscode.commands.registerCommand('cclite.exportChat', () => provider.exportTranscript()),
     vscode.commands.registerCommand('cclite.chat', () => runInTerminal('CC-lite', cliPath())),
     vscode.commands.registerCommand('cclite.oneShot', async () => {
       const input = await vscode.window.showInputBox({ prompt: 'CC-lite 一次性模式', placeHolder: '输入提示词' });
@@ -510,7 +515,7 @@ function activate(context) {
         : `请分析这个文件: ${filePath}`;
       runInTerminal('CC-lite 分析', `${cliPath()} -p ${shellQuote(ask)}`);
     }),
-    vscode.commands.registerCommand('cclite.webui', () => runInTerminal('CC-lite WebUI', 'ccliteweb')),
+    vscode.commands.registerCommand('cclite.webui', () => runInTerminal('CC-lite WebUI', cliWebuiCmd())),
   );
 }
 
