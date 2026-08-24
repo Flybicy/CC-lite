@@ -1,0 +1,5 @@
+openai.chatgpt-*
+*.vsix
+.git*
+node_modules
+sidebar

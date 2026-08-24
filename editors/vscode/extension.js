@@ -13,9 +13,39 @@ const { spawn } = require('child_process');
 // Config helpers
 // ---------------------------------------------------------------------------
 
+let _cliResolved;
 function cliPath() {
+  if (_cliResolved !== undefined) return _cliResolved;
   const configured = vscode.workspace.getConfiguration('cclite').get('cliPath');
-  return configured || 'cclite';
+  if (configured) { _cliResolved = configured; return configured; }
+  // PATH probe first (covers fresh installs only after a window reload).
+  try {
+    const probe = require('child_process').spawnSync('cclite', ['--version'],
+      { shell: process.platform === 'win32', timeout: 5000, stdio: 'ignore' });
+    if (probe.status === 0) { _cliResolved = 'cclite'; return 'cclite'; }
+  } catch { /* not on PATH */ }
+  // Common install locations (installer PATH changes need a VS Code reload —
+  // these candidates work around a stale process environment).
+  const candidates = process.platform === 'win32'
+    ? [process.env.APPDATA && path.join(process.env.APPDATA, 'npm', 'cclite.cmd'),
+       path.join(os.homedir(), '.local', 'bin', 'cclite.cmd'),
+       path.join(os.homedir(), '.bun', 'bin', 'cclite.cmd')].filter(Boolean)
+    : [path.join(os.homedir(), '.local', 'bin', 'cclite'),
+       '/usr/local/bin/cclite'];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) { _cliResolved = c; return c; }
+  }
+  _cliResolved = null;
+  return null;
+}
+
+function requireCli() {
+  const cli = cliPath();
+  if (!cli) {
+    _cliResolved = undefined; // don't cache failures; user may finish installing
+    vscode.window.showErrorMessage('未找到 cclite：请先在仓库根目录运行安装脚本，然后 Developer: Reload Window（安装脚本改 PATH 后 VS Code 需要重载）。也可以在设置 cclite.cliPath 中手动指定路径。');
+  }
+  return cli;
 }
 
 function permissionMode() {
@@ -46,12 +76,24 @@ function readCurrentModelLabel() {
 
 // The ccliteweb shim is only created by some installers; `cclite config` is
 // the always-present alias, so the button survives PATH gaps.
+// Platform-aware CLI invocation string for a terminal (PowerShell on Windows
+// needs the call operator when the path is quoted).
+function cliInvoke(args) {
+  const cli = cliPath() || 'cclite';
+  const joined = args.join(' ');
+  return process.platform === 'win32' ? `& "${cli}" ${joined}` : `"${cli}" ${joined}`;
+}
+
 function cliWebuiCmd() {
-  return `${cliPath()} config`;
+  const cli = cliPath() || 'cclite';
+  return process.platform === 'win32' ? `& "${cli}" config` : `"${cli}" config`;
 }
 
 function shellQuote(s) {
-  return `'${String(s).replace(/'/g, "'\\''")}'`;
+  const escaped = process.platform === 'win32'
+    ? String(s).replace(/'/g, "''")       // PowerShell single-quote escape
+    : String(s).replace(/'/g, "'\\''");
+  return '\'' + escaped + '\'';
 }
 
 // ---------------------------------------------------------------------------
@@ -83,7 +125,14 @@ class ChatSession {
     if (this.opts.effort && this.opts.effort !== 'auto') {
       env.CLAUDE_CODE_EFFORT_LEVEL = this.opts.effort;
     }
-    this.proc = spawn(cliPath(), args, {
+    const cli = cliPath();
+    if (!cli) {
+      requireCli();
+      this.closed = true;
+      this.onEvent({ type: 'closed', code: -1 });
+      return;
+    }
+    this.proc = spawn(cli, args, {
       cwd: this.opts.cwd,
       env,
       shell: process.platform === 'win32', // cclite is a .cmd shim on Windows
@@ -256,6 +305,9 @@ class ChatViewProvider {
       case 'openWebui':
         vscode.commands.executeCommand('cclite.webui');
         return;
+      case 'attach':
+        void this.pickFiles();
+        return;
     }
   }
 
@@ -298,6 +350,18 @@ class ChatViewProvider {
   /** Called from the webview 'finalize' path after the last delta. */
   noteAssistantText(text) {
     this.transcript.push({ role: 'assistant', text });
+  }
+
+  async pickFiles() {
+    const uris = await vscode.window.showOpenDialog({
+      canSelectFiles: true,
+      canSelectFolders: true,
+      canSelectMany: true,
+      openLabel: '引用',
+    });
+    if (!uris || !uris.length) return;
+    const text = uris.map(u => '@' + vscode.workspace.asRelativePath(u)).join(' ') + ' ';
+    this.post({ type: 'insertText', text });
   }
 
   async exportTranscript() {
@@ -351,6 +415,15 @@ function renderHtml(cspSource) {
     background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
   #send:disabled { opacity:.4; cursor:default; }
   .spinner { color: var(--vscode-descriptionForeground); font-size:12px; padding:0 12px 6px; display:none; }
+  #drawerWrap { position:relative; }
+  #drawer { position:absolute; bottom:38px; left:0; min-width:220px; padding:10px; z-index:10;
+    background: var(--vscode-quickInput-background); border:1px solid var(--vscode-panel-border);
+    border-radius:10px; box-shadow: 0 4px 16px rgba(0,0,0,.35); }
+  #drawer .drawer-title { font-size:11px; color: var(--vscode-descriptionForeground); margin:6px 0 3px; }
+  #drawer select { width:100%; background: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground);
+    border:1px solid var(--vscode-dropdown-border); border-radius:4px; padding:3px 6px; font-size:12px; }
+  #drawer .wide { width:100%; margin-top:10px; }
+  #drawer .drawer-note { font-size:11px; color: var(--vscode-descriptionForeground); margin-top:8px; }
 </style>
 </head>
 <body>
@@ -359,19 +432,28 @@ function renderHtml(cspSource) {
   <div id="composer">
     <textarea id="input" placeholder="Do anything… (Enter 发送, Shift+Enter 换行)"></textarea>
     <div id="controls">
-      <button class="pill" id="webui" title="配置供应商 (打开 WebUI)">⚙</button>
-      <select class="pill" id="tier" title="模型档位">
-        <option value="pro">pro</option>
-        <option value="plus">plus</option>
-        <option value="se">se</option>
-      </select>
-      <select class="pill" id="effort" title="思考等级">
-        <option value="auto">思考 auto</option>
-        <option value="low">思考 minimal</option>
-        <option value="medium">思考 medium</option>
-        <option value="high">思考 high</option>
-        <option value="max">思考 max</option>
-      </select>
+      <button class="pill" id="attach" title="引用文件 (+)">＋</button>
+      <div id="drawerWrap">
+        <button class="pill" id="drawerBtn" title="模型与思考">pro · auto</button>
+        <div id="drawer" hidden>
+          <div class="drawer-title">模型</div>
+          <select id="tier">
+            <option value="pro">pro（主档 · 失败自动降级）</option>
+            <option value="plus">plus（第二档）</option>
+            <option value="se">se（兜底档）</option>
+          </select>
+          <div class="drawer-title">思考等级</div>
+          <select id="effort">
+            <option value="auto">Auto（模型默认）</option>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+            <option value="max">Max</option>
+          </select>
+          <button id="webui" class="pill wide">⚙ 打开 WebUI 配置供应商</button>
+          <div class="drawer-note">切换档位/等级会以新配置重开会话</div>
+        </div>
+      </div>
       <div class="spacer"></div>
       <button id="send" title="发送">↑</button>
     </div>
@@ -404,17 +486,27 @@ function renderHtml(cspSource) {
   input.addEventListener('keydown', e => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
   });
+  const drawer = document.getElementById('drawer');
+  const drawerBtn = document.getElementById('drawerBtn');
+  const tierSel = document.getElementById('tier');
+  const effortSel = document.getElementById('effort');
+  function syncDrawerLabel() { drawerBtn.textContent = tierSel.value + ' · ' + effortSel.value; }
+  drawerBtn.onclick = ev => { ev.stopPropagation(); drawer.hidden = !drawer.hidden; };
+  document.addEventListener('click', ev => { if (!drawer.hidden && !drawer.contains(ev.target) && ev.target !== drawerBtn) drawer.hidden = true; });
+  document.getElementById('attach').onclick = () => vscode.postMessage({ type: 'attach' });
   document.getElementById('webui').onclick = () => vscode.postMessage({ type: 'openWebui' });
-  document.getElementById('tier').onchange = e => vscode.postMessage({ type: 'setTier', tier: e.target.value });
-  document.getElementById('effort').onchange = e => vscode.postMessage({ type: 'setEffort', effort: e.target.value });
+  tierSel.onchange = e => { syncDrawerLabel(); vscode.postMessage({ type: 'setTier', tier: e.target.value }); };
+  effortSel.onchange = e => { syncDrawerLabel(); vscode.postMessage({ type: 'setEffort', effort: e.target.value }); };
+  syncDrawerLabel();
 
   window.addEventListener('message', e => {
     const m = e.data;
     switch (m.type) {
       case 'reset':
         msgs.innerHTML = '';
-        document.getElementById('tier').value = m.tier;
-        document.getElementById('effort').value = m.effort;
+        tierSel.value = m.tier;
+        effortSel.value = m.effort;
+        syncDrawerLabel();
         currentAssistantEl = null;
         el('sys', '新会话（' + m.tier + ' · ' + m.effort + '）');
         break;
@@ -439,6 +531,10 @@ function renderHtml(cspSource) {
         break;
       case 'error':
         el('err', m.text);
+        break;
+      case 'insertText':
+        input.value = (input.value ? input.value + ' ' : '') + m.text;
+        input.focus();
         break;
       case 'busy':
         spin.style.display = m.busy ? 'block' : 'none';
@@ -499,7 +595,10 @@ function activate(context) {
     { dispose: () => watcher && watcher.close() },
     vscode.commands.registerCommand('cclite.newChat', () => provider.newSession()),
     vscode.commands.registerCommand('cclite.exportChat', () => provider.exportTranscript()),
-    vscode.commands.registerCommand('cclite.chat', () => runInTerminal('CC-lite', cliPath())),
+    vscode.commands.registerCommand('cclite.chat', () => {
+      const cli = requireCli();
+      if (cli) runInTerminal('CC-lite', process.platform === 'win32' ? `& "${cli}"` : cli);
+    }),
     vscode.commands.registerCommand('cclite.oneShot', async () => {
       const input = await vscode.window.showInputBox({ prompt: 'CC-lite 一次性模式', placeHolder: '输入提示词' });
       if (input) runInTerminal('CC-lite -p', `${cliPath()} -p ${shellQuote(input)}`);
