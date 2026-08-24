@@ -305,8 +305,17 @@ class ChatViewProvider {
       case 'openWebui':
         vscode.commands.executeCommand('cclite.webui');
         return;
-      case 'attach':
+      case 'attachFile':
         void this.pickFiles();
+        return;
+      case 'attachSelection':
+        void this.attachSelection();
+        return;
+      case 'attachSkill':
+        void this.attachSkill();
+        return;
+      case 'pickMode':
+        void this.pickMode();
         return;
     }
   }
@@ -364,6 +373,59 @@ class ChatViewProvider {
     this.post({ type: 'insertText', text });
   }
 
+  async attachSelection() {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor || editor.selection.isEmpty) {
+      vscode.window.showInformationMessage('请先在编辑器中选中一段代码');
+      return;
+    }
+    const rel = vscode.workspace.asRelativePath(editor.document.uri);
+    const start = editor.selection.start.line + 1;
+    const end = editor.selection.end.line + 1;
+    const range = start === end ? `L${start}` : `L${start}-L${end}`;
+    const snippet = editor.document.getText(editor.selection);
+    this.post({ type: 'insertText', text: `@${rel}:${range}\n\`\`\`\n${snippet}\n\`\`\` ` });
+  }
+
+  async attachSkill() {
+    const roots = [path.join(os.homedir(), '.claude', 'skills')];
+    const ws = workspaceRoot();
+    if (ws) roots.push(path.join(ws, '.claude', 'skills'));
+    const skills = [];
+    for (const root of roots) {
+      let entries = [];
+      try { entries = fs.readdirSync(root, { withFileTypes: true }); } catch { continue; }
+      for (const e of entries) {
+        if (!e.isDirectory()) continue;
+        try { if (fs.existsSync(path.join(root, e.name, 'SKILL.md'))) skills.push(e.name); } catch {}
+      }
+    }
+    if (!skills.length) {
+      vscode.window.showInformationMessage('没有找到技能（~/.claude/skills 或 项目/.claude/skills）');
+      return;
+    }
+    const picked = await vscode.window.showQuickPick(skills, { placeHolder: '选择要插入的技能' });
+    if (picked) this.post({ type: 'insertText', text: `/${picked} ` });
+  }
+
+  async pickMode() {
+    const modes = [
+      { label: 'default', description: '每步询问' },
+      { label: 'acceptEdits', description: '自动接受编辑（默认，推荐）' },
+      { label: 'plan', description: '先规划，只读不改动' },
+      { label: 'bypassPermissions', description: '全部放行（仍有硬安全兜底）' },
+    ];
+    const current = permissionMode();
+    const picked = await vscode.window.showQuickPick(
+      modes.map(m => ({ ...m, label: m.label === current ? `$(check) ${m.label}` : m.label })),
+      { placeHolder: '选择会话权限模式（切换后会重开会话）' },
+    );
+    if (!picked) return;
+    const mode = picked.label.replace(/^(\$\(check\) )/, '');
+    await vscode.workspace.getConfiguration('cclite').update('permissionMode', mode, vscode.ConfigurationTarget.Global);
+    this.newSession();
+  }
+
   async exportTranscript() {
     if (!this.transcript.length) {
       vscode.window.showInformationMessage('还没有对话内容可导出');
@@ -396,6 +458,12 @@ function renderHtml(cspSource) {
 <style>
   body { font-family: var(--vscode-font-family); margin:0; padding:0; display:flex; flex-direction:column; height:100vh; }
   #msgs { flex:1; overflow-y:auto; padding:10px; }
+  html, body { overflow:hidden; }
+  #msgs { scrollbar-width:thin; scrollbar-color:transparent transparent; }
+  #msgs:hover { scrollbar-color:var(--vscode-scrollbarSlider-background) transparent; }
+  #msgs::-webkit-scrollbar { width:8px; }
+  #msgs::-webkit-scrollbar-thumb { background:transparent; border-radius:4px; }
+  #msgs:hover::-webkit-scrollbar-thumb { background:var(--vscode-scrollbarSlider-background); }
   .msg { margin:6px 0; padding:8px 10px; border-radius:8px; white-space:pre-wrap; word-break:break-word; font-size:13px; line-height:1.5; }
   .user { background: var(--vscode-input-background); border:1px solid var(--vscode-input-border); margin-left:12%; }
   .assistant { background: var(--vscode-sideBar-background); }
@@ -409,6 +477,18 @@ function renderHtml(cspSource) {
   .pill { background: var(--vscode-dropdown-background); color: var(--vscode-dropdown-foreground);
     border:1px solid var(--vscode-dropdown-border); border-radius:999px; padding:3px 10px; font-size:12px; cursor:pointer; }
   .pill:hover { filter:brightness(1.15); }
+  #attachWrap { position:relative; order:1; }
+  #controls .spacer { order:2; }
+  #drawerWrap { order:3; }
+  #send { order:4; }
+  .pop { position:absolute; bottom:38px; left:0; min-width:170px; padding:6px; z-index:10;
+    background: var(--vscode-quickInput-background); border:1px solid var(--vscode-panel-border);
+    border-radius:10px; box-shadow: 0 4px 16px rgba(0,0,0,.35); display:flex; flex-direction:column; gap:2px; }
+  .pop-item { text-align:left; background:transparent; color: var(--vscode-foreground); border:none;
+    border-radius:6px; padding:6px 8px; font-size:12px; cursor:pointer; }
+  .pop-item:hover { background: var(--vscode-list-hoverBackground); }
+  .pop-sep { height:1px; background: var(--vscode-panel-border); margin:2px 4px; }
+
   select.pill { appearance:none; -webkit-appearance:none; text-align:center; }
   #controls .spacer { flex:1; }
   #send { width:30px; height:30px; border-radius:50%; border:none; cursor:pointer; font-size:15px; line-height:1;
@@ -416,7 +496,7 @@ function renderHtml(cspSource) {
   #send:disabled { opacity:.4; cursor:default; }
   .spinner { color: var(--vscode-descriptionForeground); font-size:12px; padding:0 12px 6px; display:none; }
   #drawerWrap { position:relative; }
-  #drawer { position:absolute; bottom:38px; left:0; min-width:220px; padding:10px; z-index:10;
+  #drawer { position:absolute; bottom:38px; right:0; min-width:220px; padding:10px; z-index:10;
     background: var(--vscode-quickInput-background); border:1px solid var(--vscode-panel-border);
     border-radius:10px; box-shadow: 0 4px 16px rgba(0,0,0,.35); }
   #drawer .drawer-title { font-size:11px; color: var(--vscode-descriptionForeground); margin:6px 0 3px; }
@@ -432,7 +512,16 @@ function renderHtml(cspSource) {
   <div id="composer">
     <textarea id="input" placeholder="Do anything… (Enter 发送, Shift+Enter 换行)"></textarea>
     <div id="controls">
-      <button class="pill" id="attach" title="引用文件 (+)">＋</button>
+      <div id="attachWrap">
+        <button class="pill" id="attach" title="添加引用 / 技能 / 模式">＋</button>
+        <div id="attachMenu" class="pop" hidden>
+          <button class="pop-item" data-act="attachFile">📄 引用文件…</button>
+          <button class="pop-item" data-act="attachSelection">✂ 引用选中代码</button>
+          <button class="pop-item" data-act="attachSkill">🧩 插入技能…</button>
+          <div class="pop-sep"></div>
+          <button class="pop-item" data-act="pickMode">🛡 权限模式…</button>
+        </div>
+      </div>
       <div id="drawerWrap">
         <button class="pill" id="drawerBtn" title="模型与思考">pro · auto</button>
         <div id="drawer" hidden>
@@ -493,7 +582,17 @@ function renderHtml(cspSource) {
   function syncDrawerLabel() { drawerBtn.textContent = tierSel.value + ' · ' + effortSel.value; }
   drawerBtn.onclick = ev => { ev.stopPropagation(); drawer.hidden = !drawer.hidden; };
   document.addEventListener('click', ev => { if (!drawer.hidden && !drawer.contains(ev.target) && ev.target !== drawerBtn) drawer.hidden = true; });
-  document.getElementById('attach').onclick = () => vscode.postMessage({ type: 'attach' });
+  const attachBtn = document.getElementById('attach');
+  const attachMenu = document.getElementById('attachMenu');
+  attachBtn.onclick = ev => { ev.stopPropagation(); attachMenu.hidden = !attachMenu.hidden; drawer.hidden = true; };
+  drawerBtn.addEventListener('click', () => { attachMenu.hidden = true; });
+  document.addEventListener('click', ev => { if (!attachMenu.hidden && !attachMenu.contains(ev.target) && ev.target !== attachBtn) attachMenu.hidden = true; });
+  attachMenu.addEventListener('click', ev => {
+    const act = ev.target && ev.target.dataset ? ev.target.dataset.act : null;
+    if (!act) return;
+    attachMenu.hidden = true;
+    vscode.postMessage({ type: act });
+  });
   document.getElementById('webui').onclick = () => vscode.postMessage({ type: 'openWebui' });
   tierSel.onchange = e => { syncDrawerLabel(); vscode.postMessage({ type: 'setTier', tier: e.target.value }); };
   effortSel.onchange = e => { syncDrawerLabel(); vscode.postMessage({ type: 'setEffort', effort: e.target.value }); };
