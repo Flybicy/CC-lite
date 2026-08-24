@@ -1,4 +1,7 @@
 import { feature } from 'bun:bundle';
+import { getCwd } from '../../utils/cwd.js'
+import { checkHardBlockedCommand } from '../../utils/safety/hardGuards.js'
+import { rewriteDeletionToTrash } from '../../utils/safety/trashGuard.js'
 import type { ToolResultBlockParam } from '@anthropic-ai/sdk/resources/index.mjs';
 import { copyFile, stat as fsStat, truncate as fsTruncate, link } from 'fs/promises';
 import * as React from 'react';
@@ -641,9 +644,20 @@ export const BashTool = buildTool({
     const isMainThread = !toolUseContext.agentId;
     const preventCwdChanges = !isMainThread;
     try {
+      // CC-lite hard guards: refuse catastrophic commands even when the
+      // permission layer somehow let them through (e.g. bypassPermissions),
+      // and route plain rm deletions through the recoverable trash instead.
+      const hardBlocked = checkHardBlockedCommand(input.command, getCwd());
+      if (hardBlocked) {
+        throw new Error(hardBlocked);
+      }
+      const trashedInput = {
+        ...input,
+        command: rewriteDeletionToTrash(input.command, getCwd()) ?? input.command,
+      };
       // Use the new async generator version of runShellCommand
       const commandGenerator = runShellCommand({
-        input,
+        input: trashedInput,
         abortController,
         // Use the always-shared task channel so async agents' background
         // bash tasks are actually registered (and killable on agent exit).

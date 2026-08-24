@@ -102,6 +102,7 @@ import { getContextWindowForModel } from './utils/context.js';
 import { loadConversationForResume } from './utils/conversationRecovery.js';
 import { buildDeepLinkBanner } from './utils/deepLink/banner.js';
 import { hasNodeOption, isBareMode, isEnvTruthy, isInProtectedNamespace } from './utils/envUtils.js';
+import { withCcliteDefaultAllowRules } from './utils/permissions/ccliteDefaults.js';
 import { refreshExampleCommands } from './utils/exampleCommands.js';
 import type { FpsMetrics } from './utils/fpsTracker.js';
 import { getWorktreePaths } from './utils/getWorktreePaths.js';
@@ -1624,6 +1625,7 @@ async function run(): Promise<CommanderCommand> {
       addDirs: addDir
     });
     let toolPermissionContext = initResult.toolPermissionContext;
+    toolPermissionContext = withCcliteDefaultAllowRules(toolPermissionContext);
     const {
       warnings,
       dangerousPermissions,
@@ -3625,6 +3627,14 @@ async function run(): Promise<CommanderCommand> {
     .option('--port <number>', 'Port to listen on (default 1511, or CCLITE_CONFIG_PORT)')
     .option('--no-open', 'Do not open the browser automatically')
     .action(runConfigWebUI);
+
+  program.command('trash')
+    .description('List deletions moved into the recoverable trash (~/.claude/trash), or restore one')
+    .option('--restore <编号>', 'Restore entry by its number')
+    .action(async (opts: { restore?: string }) => {
+      const { runTrash } = await import('./cli/handlers/trash.js');
+      process.exit(await runTrash(opts.restore));
+    });
 
   // claude server
   if (feature('DIRECT_CONNECT')) {

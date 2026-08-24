@@ -26,6 +26,7 @@ import {
 import { parseCommandRaw } from '../../utils/bash/parser.js'
 import { tryParseShellCommand } from '../../utils/bash/shellQuote.js'
 import { getCwd } from '../../utils/cwd.js'
+import { checkHardBlockedCommand } from '../../utils/safety/hardGuards.js'
 import { logForDebugging } from '../../utils/debug.js'
 import { isEnvTruthy } from '../../utils/envUtils.js'
 import { AbortError } from '../../utils/errors.js'
@@ -1665,6 +1666,17 @@ export async function bashToolHasPermission(
   context: ToolUseContext,
   getCommandSubcommandPrefixFn = getCommandSubcommandPrefix,
 ): Promise<PermissionResult> {
+  // CC-lite hard guard: catastrophic operations are denied in EVERY mode,
+  // including bypassPermissions. No allowlist can override this.
+  const hardBlocked = checkHardBlockedCommand(input.command, getCwd())
+  if (hardBlocked) {
+    return {
+      behavior: 'deny',
+      message: hardBlocked,
+      decisionReason: { type: 'other', reason: hardBlocked },
+    }
+  }
+
   let appState = context.getAppState()
 
   // 0. AST-based security parse. This replaces both tryParseShellCommand
