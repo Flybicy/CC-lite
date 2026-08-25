@@ -19,6 +19,7 @@ import { getBranch } from '../utils/git.js';
 import { getLogDisplayTitle } from '../utils/log.js';
 import { getFirstMeaningfulUserMessageTextContent, getSessionIdFromLog, isCustomTitleEnabled, saveCustomTitle } from '../utils/sessionStorage.js';
 import { getTheme } from '../utils/theme.js';
+import { mergeKeywordAndSemantic, rankSessionsBySimilarity } from '../utils/sessionSemanticSearch.js';
 import { ConfigurableShortcutHint } from './ConfigurableShortcutHint.js';
 import { Select } from './CustomSelect/select.js';
 import { Byline } from './design-system/Byline.js';
@@ -141,7 +142,7 @@ function buildLogMetadata(log: LogOption, options?: {
   return childPadding + baseMetadata + projectSuffix;
 }
 export function LogSelector(t0) {
-  const $ = _c(247);
+  const $ = _c(255);
   const {
     logs,
     maxHeight: t1,
@@ -441,6 +442,62 @@ export function LogSelector(t0) {
     t22 = t23;
   }
   const titleFilteredLogs = t22;
+  // Semantic supplement (local embedding model, fully offline): score the
+  // filtered universe against the query so topically related sessions still
+  // surface when the keyword filter dead-ends on titles/branches/tags.
+  // Best-effort — null/absent state keeps exact keyword-only behavior while
+  // scoring runs and whenever embeddings are unavailable or fail.
+  const [semanticSearchState, setSemanticSearchState] = React.useState(null);
+  let runSemanticScoring;
+  let semanticScoringDeps;
+  if ($[247] !== deferredSearchQuery || $[248] !== baseFilteredLogs) {
+    const semanticQuery = deferredSearchQuery;
+    const semanticUniverse = baseFilteredLogs;
+    runSemanticScoring = () => {
+      if (!semanticQuery.trim()) {
+        setSemanticSearchState(null);
+        return;
+      }
+      let cancelled = false;
+      // searchableTextByLog's values infer loosely in this compiled module -
+      // narrow to string explicitly.
+      rankSessionsBySimilarity(semanticQuery, semanticUniverse, log_6 => {
+        const text_1 = searchableTextByLog.get(log_6);
+        return typeof text_1 === "string" ? text_1 : "";
+      }).then(result => {
+        if (!cancelled) setSemanticSearchState({
+          query: semanticQuery,
+          scores: result
+        });
+      }).catch(() => {
+        if (!cancelled) setSemanticSearchState(null);
+      });
+      return () => {
+        cancelled = true;
+      };
+    };
+    semanticScoringDeps = [semanticQuery, semanticUniverse];
+    $[247] = semanticQuery;
+    $[248] = semanticUniverse;
+    $[249] = runSemanticScoring;
+    $[250] = semanticScoringDeps;
+  } else {
+    runSemanticScoring = $[249];
+    semanticScoringDeps = $[250];
+  }
+  React.useEffect(runSemanticScoring, semanticScoringDeps);
+  let tSe2;
+  if ($[251] !== titleFilteredLogs || $[252] !== semanticSearchState || $[253] !== searchQuery) {
+    const semanticScores = semanticSearchState && semanticSearchState.query === searchQuery ? semanticSearchState.scores : null;
+    tSe2 = searchQuery ? mergeKeywordAndSemantic(titleFilteredLogs, semanticScores) : titleFilteredLogs;
+    $[251] = titleFilteredLogs;
+    $[252] = semanticSearchState;
+    $[253] = searchQuery;
+    $[254] = tSe2;
+  } else {
+    tSe2 = $[254];
+  }
+  const effectiveTitleLogs = tSe2;
   let t23;
   let t24;
   if ($[42] !== debouncedDeepSearchQuery || $[43] !== deferredSearchQuery) {
@@ -484,9 +541,9 @@ export function LogSelector(t0) {
   React.useEffect(t25, t26);
   let filtered_0;
   let snippetMap;
-  if ($[49] !== debouncedDeepSearchQuery || $[50] !== deepSearchResults || $[51] !== titleFilteredLogs) {
+  if ($[49] !== debouncedDeepSearchQuery || $[50] !== deepSearchResults || $[51] !== effectiveTitleLogs) {
     snippetMap = new Map();
-    filtered_0 = titleFilteredLogs;
+    filtered_0 = effectiveTitleLogs;
     if (deepSearchResults && debouncedDeepSearchQuery && deepSearchResults.query === debouncedDeepSearchQuery) {
       for (const result of deepSearchResults.results) {
         if (result.searchableText) {
@@ -528,7 +585,7 @@ export function LogSelector(t0) {
     }
     $[49] = debouncedDeepSearchQuery;
     $[50] = deepSearchResults;
-    $[51] = titleFilteredLogs;
+    $[51] = effectiveTitleLogs;
     $[52] = filtered_0;
     $[53] = snippetMap;
   } else {

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useTheme } from '../components/design-system/ThemeProvider.js'
 import type { useSelection } from '../ink/hooks/use-selection.js'
+import { setAppClipboard } from '../utils/appClipboard.js'
 import { getGlobalConfig } from '../utils/config.js'
 import { getTheme } from '../utils/theme.js'
 
@@ -76,6 +77,9 @@ export function useCopyOnSelect(
         return
       }
       copiedRef.current = true
+      // Mirror into the in-app clipboard first: ctrl+y can always yank this
+      // into the prompt even when OSC 52/native tools are unavailable.
+      setAppClipboard(text)
       onCopiedRef.current?.(text)
     })
     return unsubscribe

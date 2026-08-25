@@ -44,6 +44,14 @@ import { z } from 'zod/v4'
 
 export type ProviderType = 'openai' | 'anthropic'
 
+/**
+ * Transport style for OpenAI-compatible providers. 'auto' keeps the built-in
+ * heuristic (chat completions everywhere except official OpenAI reasoning
+ * models / codex aliases); the other two pin one endpoint style per provider,
+ * so a relay that only speaks /responses works without a global env var.
+ */
+export type ProviderApiMode = 'auto' | 'chat_completions' | 'responses'
+
 /** Public call codenames. This is what the rest of the codebase references. */
 export type ModelTier = 'pro' | 'plus' | 'se'
 
@@ -88,6 +96,10 @@ export const ProviderEntrySchema = z.object({
   // built-in defaults (some Anthropic-compatible gateways require an exact
   // User-Agent / x-app and 401 otherwise).
   headers: z.record(z.string(), z.string()).optional(),
+  // OpenAI-compatible only: force the endpoint style for this provider.
+  // Absent / 'auto' = heuristic (chat completions, responses for official
+  // OpenAI reasoning models). Ignored for anthropic-type providers.
+  apiMode: z.enum(['auto', 'chat_completions', 'responses']).optional(),
 })
 
 export const TierBindingSchema = z.object({

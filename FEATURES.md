@@ -79,7 +79,10 @@ explicitly called out as default-on.
 - `TOKEN_BUDGET`
   Enables token budget tracking, prompt triggers, and token warning UI.
 - `ULTRAPLAN`
-  Enables `/ultraplan`, prompt triggers, and exit-plan affordances.
+  Enables `/ultraplan`, prompt triggers, and exit-plan affordances. NOT
+  included in the full/cclite feature sets: planning runs on Claude Code web
+  via remote CCR sessions, which require `/login` (OAuth) and cloud
+  environments -- both stripped in this fork, so the flag is dead code here.
 - `ULTRATHINK`
   Enables the extra thinking-depth mode switch.
 - `VOICE_MODE`
@@ -115,7 +118,10 @@ explicitly called out as default-on.
 - `BASH_CLASSIFIER`
   Enables classifier-assisted bash permission decisions.
 - `BRIDGE_MODE`
-  Enables Remote Control / REPL bridge command and entitlement paths.
+  Enables Remote Control / REPL bridge command and entitlement paths. NOT
+  included in the full/cclite feature sets: `isBridgeEnabled()` gates on
+  `isClaudeAISubscriber()`, which is hardcoded `false` with OAuth stripped --
+  the flag can never activate in this fork.
 - `CCR_AUTO_CONNECT`
   Enables the CCR auto-connect default path. NOT in the full/cclite feature
   sets: dead without claude.ai OAuth (stripped in this fork).

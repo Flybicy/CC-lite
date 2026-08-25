@@ -16,12 +16,19 @@ const dev = args.includes('--dev')
 // is why the compiled binary can only use the approximate fallback.
 const bundleOnly = args.includes('--bundle')
 
+// Flags excluded from every feature set on purpose — they are dead in this
+// fork because they hard-depend on stripped claude.ai infrastructure:
+//   BRIDGE_MODE — isBridgeEnabled() gates on isClaudeAISubscriber(), which is
+//     hardcoded false with OAuth stripped; enabling it only ships dead code.
+//   ULTRAPLAN   — plans on Claude Code web via remote CCR sessions, which
+//     require /login (OAuth) and cloud environments; both are removed here.
+// Same policy as AGENT_TRIGGERS_REMOTE / CCR_AUTO_CONNECT / CCR_MIRROR /
+// CCR_REMOTE_SETUP (see FEATURES.md).
 const fullExperimentalFeatures = [
   'AGENT_MEMORY_SNAPSHOT',
   'AGENT_TRIGGERS',
   'AWAY_SUMMARY',
   'BASH_CLASSIFIER',
-  'BRIDGE_MODE',
   'BUILTIN_EXPLORE_PLAN_AGENTS',
   'CACHED_MICROCOMPACT',
   'COMPACTION_REMINDERS',
@@ -44,7 +51,6 @@ const fullExperimentalFeatures = [
   'TOKEN_BUDGET',
   'TREE_SITTER_BASH',
   'TREE_SITTER_BASH_SHADOW',
-  'ULTRAPLAN',
   'ULTRATHINK',
   'UNATTENDED_RETRY',
   'VERIFICATION_AGENT',
@@ -91,55 +97,68 @@ function getVersionChangelog(): string {
 
 const defaultFeatures = ['VOICE_MODE']
 const featureSet = new Set(defaultFeatures)
-for (let i = 0; i < args.length; i += 1) {
-  const arg = args[i]
-  if (arg === '--feature-set' && args[i + 1]) {
-    if (args[i + 1] === 'dev-full') {
-      for (const feature of fullExperimentalFeatures) {
-        featureSet.add(feature)
-      }
-    } else if (args[i + 1] === 'cclite') {
-      const ccLiteFeatures = [
-        'AGENT_MEMORY_SNAPSHOT',
-        'AGENT_TRIGGERS',
-              'AWAY_SUMMARY',
-        'BASH_CLASSIFIER',
-        'BUILTIN_EXPLORE_PLAN_AGENTS',
-        'CACHED_MICROCOMPACT',
-        'COMPACTION_REMINDERS',
-        'EXTRACT_MEMORIES',
-        'HISTORY_PICKER',
-        'HOOK_PROMPTS',
-        'KAIROS_BRIEF',
-        'KAIROS_CHANNELS',
-        'LODESTONE',
-        'MCP_RICH_OUTPUT',
-        'MESSAGE_ACTIONS',
-        'NATIVE_CLIPBOARD_IMAGE',
-        'NEW_INIT',
-        'POWERSHELL_AUTO_MODE',
-        'PROMPT_CACHE_BREAK_DETECTION',
-        'QUICK_SEARCH',
-        'SHOT_STATS',
-        'TEAMMEM',
-        'TOKEN_BUDGET',
-        'TREE_SITTER_BASH',
-        'TREE_SITTER_BASH_SHADOW',
-        'UNATTENDED_RETRY',
-        'VERIFICATION_AGENT',
-        'VOICE_MODE',
-      ]
-      for (const feature of ccLiteFeatures) {
-        featureSet.add(feature)
-      }
-    }
-    i += 1
-    continue
-  }
-  if (arg === '--feature-set=dev-full') {
+
+const ccLiteFeatures = [
+  'AGENT_MEMORY_SNAPSHOT',
+  'AGENT_TRIGGERS',
+  'AWAY_SUMMARY',
+  'BASH_CLASSIFIER',
+  'BUILTIN_EXPLORE_PLAN_AGENTS',
+  'CACHED_MICROCOMPACT',
+  'COMPACTION_REMINDERS',
+  'EXTRACT_MEMORIES',
+  'HISTORY_PICKER',
+  'HOOK_PROMPTS',
+  'KAIROS_BRIEF',
+  'KAIROS_CHANNELS',
+  'LODESTONE',
+  'MCP_RICH_OUTPUT',
+  'MESSAGE_ACTIONS',
+  'NATIVE_CLIPBOARD_IMAGE',
+  'NEW_INIT',
+  'POWERSHELL_AUTO_MODE',
+  'PROMPT_CACHE_BREAK_DETECTION',
+  'QUICK_SEARCH',
+  'SHOT_STATS',
+  'TEAMMEM',
+  'TOKEN_BUDGET',
+  'TREE_SITTER_BASH',
+  'TREE_SITTER_BASH_SHADOW',
+  'ULTRATHINK',
+  'UNATTENDED_RETRY',
+  'VERIFICATION_AGENT',
+  'VOICE_MODE',
+]
+
+function applyFeatureSet(name: string): void {
+  if (name === 'dev-full') {
     for (const feature of fullExperimentalFeatures) {
       featureSet.add(feature)
     }
+  } else if (name === 'cclite') {
+    for (const feature of ccLiteFeatures) {
+      featureSet.add(feature)
+    }
+  } else {
+    console.error(
+      `Warning: unknown --feature-set "${name}" (expected dev-full or cclite) — ignoring`,
+    )
+  }
+}
+
+for (let i = 0; i < args.length; i += 1) {
+  const arg = args[i]
+  // Both spellings are accepted: "--feature-set=cclite" (one token, as used
+  // in package.json scripts — this form was previously only handled for
+  // dev-full, so the cclite set was silently never applied!) and the
+  // space-separated "--feature-set cclite".
+  if (arg === '--feature-set' && args[i + 1]) {
+    applyFeatureSet(args[i + 1]!)
+    i += 1
+    continue
+  }
+  if (arg.startsWith('--feature-set=')) {
+    applyFeatureSet(arg.slice('--feature-set='.length))
     continue
   }
   if (arg === '--feature' && args[i + 1]) {

@@ -30,10 +30,18 @@ import {
   type ShimCreateParams,
 } from './codexShim.js'
 import {
+  isLocalProviderUrl,
   resolveCodexApiCredentials,
   resolveProviderRequest,
 } from './providerConfig.js'
+import {
+  anyBytesProgress,
+  hedgedRequest,
+  resolveFastHedgeConfig,
+  sseDataLineProgress,
+} from './hedgedRequest.js'
 import { APIError } from '@anthropic-ai/sdk'
+import { isEnvTruthy } from '../../utils/envUtils.js'
 
 // ---------------------------------------------------------------------------
 // Types — minimal subset of Anthropic SDK types we need to produce
@@ -261,27 +269,19 @@ function convertMessages(
 }
 
 /**
- * OpenAI requires every key in `properties` to also appear in `required`.
- * Anthropic schemas often mark fields as optional (omitted from `required`),
- * which causes 400 errors on OpenAI/Codex endpoints. This normalizes the
- * schema by ensuring `required` is a superset of `properties` keys.
+ * Some OpenAI-compatible validators (Gemini endpoints, strict relays) reject
+ * schemas where `required` names keys that are absent from `properties`.
+ * Keep only real property keys in `required` and leave optional parameters
+ * optional: chat-completions tools are sent WITHOUT `strict: true`, so
+ * forcing every property into `required` has no validator benefit and would
+ * make models invent values for fields they should omit.
  */
-function normalizeSchemaForOpenAI(
+export function normalizeSchemaForOpenAI(
   schema: Record<string, unknown>,
-  strict = true,
 ): Record<string, unknown> {
   if (schema.type !== 'object' || !schema.properties) return schema
   const properties = schema.properties as Record<string, unknown>
   const existingRequired = Array.isArray(schema.required) ? schema.required as string[] : []
-  // OpenAI strict mode requires every property to be listed in required[].
-  // Gemini rejects schemas where required[] contains keys absent from properties,
-  // so only promote keys that actually exist in properties.
-  if (strict) {
-    const allKeys = Object.keys(properties)
-    const required = Array.from(new Set([...existingRequired, ...allKeys]))
-    return { ...schema, required }
-  }
-  // For Gemini: keep only existing required keys that are present in properties
   const required = existingRequired.filter(k => k in properties)
   return { ...schema, required }
 }
@@ -432,7 +432,8 @@ interface OpenAIStreamChunk {
       role?: string
       content?: string | null
       tool_calls?: Array<{
-        index: number
+        // Some providers omit `index` on streamed tool-call deltas.
+        index?: number
         id?: string
         type?: string
         function?: { name?: string; arguments?: string }
@@ -468,8 +469,9 @@ function convertChunkUsage(
 /**
  * Async generator that transforms an OpenAI SSE stream into
  * Anthropic-format BetaRawMessageStreamEvent objects.
+ * (Exported for tests.)
  */
-async function* openaiStreamToAnthropic(
+export async function* openaiStreamToAnthropic(
   response: Response,
   model: string,
 ): AsyncGenerator<AnthropicStreamEvent> {
@@ -480,6 +482,11 @@ async function* openaiStreamToAnthropic(
   let lastStopReason: 'tool_use' | 'max_tokens' | 'end_turn' | null = null
   let hasEmittedFinalUsage = false
   let hasProcessedFinishReason = false
+  // Providers that omit `index` on tool-call deltas send them sequentially;
+  // synthesize stream keys for them and remember the most recent one so
+  // argument continuations still land on the right block.
+  let syntheticToolCallIndex = 0
+  let lastToolCallKey: number | null = null
 
   // Emit message_start
   yield {
@@ -565,7 +572,10 @@ async function* openaiStreamToAnthropic(
               }
 
               const toolBlockIndex = contentBlockIndex
-              activeToolCalls.set(tc.index, {
+              const streamKey =
+                typeof tc.index === 'number' ? tc.index : syntheticToolCallIndex++
+              lastToolCallKey = streamKey
+              activeToolCalls.set(streamKey, {
                 id: tc.id,
                 name: tc.function.name,
                 index: toolBlockIndex,
@@ -597,7 +607,11 @@ async function* openaiStreamToAnthropic(
               }
             } else if (tc.function?.arguments) {
               // Continuation of existing tool call
-              const active = activeToolCalls.get(tc.index)
+              const key =
+                typeof tc.index === 'number'
+                  ? tc.index
+                  : (lastToolCallKey ?? Number.NaN)
+              const active = activeToolCalls.get(key)
               if (active) {
                 yield {
                   type: 'content_block_delta',
@@ -688,6 +702,8 @@ export interface ProviderOverride {
   baseUrl?: string
   apiKey?: string
   model?: string
+  /** Per-provider transport override from providers.json (apiMode). */
+  apiMode?: string
 }
 
 class OpenAIShimMessages {
@@ -716,8 +732,32 @@ class OpenAIShimMessages {
         model: params.model,
         baseUrl: this.providerOverride?.baseUrl,
         fallbackModel: this.providerOverride?.model,
+        apiMode: this.providerOverride?.apiMode,
       })
-      const response = await self._doRequest(request, params, options)
+      // Fast mode: fire hedged duplicates of the same request staggered
+      // apart; the first stream to show real progress wins, losers are
+      // aborted. Cuts first-token latency on slow-but-concurrent backends.
+      // Local servers (Ollama/LM Studio) gain nothing from duplicates — they
+      // just double GPU/CPU load — so skip hedging for them unless forced.
+      // The governor dynamically scales attempts down under pressure (429s,
+      // provider errors, local event-loop saturation) and back up after.
+      const hedgeAllowed =
+        !isLocalProviderUrl(request.baseUrl) ||
+        isEnvTruthy(process.env.CCLITE_TURBO_INCLUDE_LOCAL)
+      const hedge = hedgeAllowed ? resolveFastHedgeConfig() : null
+      const response = hedge
+        ? await hedgedRequest(
+            signal =>
+              self._doRequest(request, params, { ...options, signal }),
+            {
+              attempts: hedge.attempts,
+              delayMs: hedge.delayMs,
+              attemptTimeoutMs: hedge.attemptTimeoutMs,
+              parentSignal: options?.signal,
+              probe: params.stream ? sseDataLineProgress : anyBytesProgress,
+            },
+          )
+        : await self._doRequest(request, params, options)
       const usesResponsesTransport = request.transport === 'responses'
 
       if (params.stream) {

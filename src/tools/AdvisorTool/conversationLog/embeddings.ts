@@ -29,10 +29,15 @@ export interface EmbeddingBackend {
   label: string
   /** True semantic understanding (real embedding model, not the fallback). */
   semantic: boolean
-  /** Embed texts; result order matches input order. */
+  /**
+   * Embed texts; result order matches input order.
+   * `forQuery: true` marks retrieval-query texts so models with an asymmetrical
+   * retrieval recipe (e.g. BGE's instruction prefix) can apply their query-side
+   * transformation. Document/passage texts must NOT set it.
+   */
   embed(
     texts: string[],
-    opts?: { signal?: AbortSignal },
+    opts?: { signal?: AbortSignal; forQuery?: boolean },
   ): Promise<EmbeddingVector[]>
 }
 
@@ -107,8 +112,22 @@ function getCacheDir(): string {
 }
 
 const memoryCache = new Map<string, EmbeddingVector>()
+// Insertion-order eviction cap: content-hashed vectors are bounded by unique
+// texts in practice, but a hard ceiling keeps worst-case memory finite.
+const MAX_MEMORY_ENTRIES = 20_000
 const diskCacheLoadedModels = new Set<string>()
 const inFlightLoads = new Map<string, Promise<void>>()
+// Memoized non-empty line counts per cache file — avoids an O(file) sync
+// re-read on every append batch.
+const diskCacheLineCounts = new Map<string, number>()
+
+function rememberVector(key: string, vector: EmbeddingVector): void {
+  if (!memoryCache.has(key) && memoryCache.size >= MAX_MEMORY_ENTRIES) {
+    const oldest = memoryCache.keys().next().value
+    if (oldest !== undefined) memoryCache.delete(oldest)
+  }
+  memoryCache.set(key, vector)
+}
 
 export function embeddingCacheKey(model: string, text: string): string {
   return createHash('sha256').update(`${model}\u0000${text}`).digest('hex')
@@ -139,21 +158,24 @@ async function loadDiskCache(model: string): Promise<void> {
     const file = cacheFileForModel(model)
     try {
       if (!existsSync(file)) return
+      let lineCount = 0
       const lines = readFileSync(file, 'utf8').split('\n')
       for (const line of lines) {
         const trimmed = line.trim()
         if (!trimmed) continue
+        lineCount++
         try {
           const record = JSON.parse(trimmed) as { k?: string; v?: string }
           if (typeof record.k !== 'string' || typeof record.v !== 'string') continue
           // Do not clobber newer in-memory vectors with stale disk entries.
           if (memoryCache.has(record.k)) continue
           const vector = decodeBase64Vector(record.v)
-          if (vector) memoryCache.set(record.k, vector)
+          if (vector) rememberVector(record.k, vector)
         } catch {
           // Corrupt line - skip.
         }
       }
+      diskCacheLineCounts.set(model, lineCount)
     } catch {
       // Unreadable cache - treat as empty.
     } finally {
@@ -173,48 +195,75 @@ function appendDiskCache(model: string, entries: Array<[string, EmbeddingVector]
   try {
     mkdirSync(getCacheDir(), { recursive: true })
     const file = cacheFileForModel(model)
-    let totalLines = 0
-    try {
-      if (existsSync(file)) {
-        totalLines = readFileSync(file, 'utf8').split('\n').filter(l => l.trim()).length
-      }
-    } catch {
-      totalLines = 0
-    }
+    const memoizedCount = diskCacheLineCounts.get(model)
     // FIFO trim: if the file would exceed the cap, rewrite with the newest
     // entries only (existing lines first, then the new batch).
     const keep = Math.max(0, MAX_DISK_ENTRIES - entries.length)
-    if (totalLines > keep) {
-      const lines: string[] = []
-      try {
-        if (existsSync(file)) {
-          for (const line of readFileSync(file, 'utf8').split('\n')) {
-            if (line.trim()) lines.push(line.trim())
-          }
-        }
-      } catch {
-        // ignore rewrite-source read failure
-      }
-      const trimmed = lines.slice(Math.max(0, lines.length - keep))
+    if (memoizedCount !== undefined && memoizedCount <= keep) {
+      // Fast path: no rewrite needed. Append and bump the memoized count.
       const serialized = entries.map(([key, vector]) =>
-        JSON.stringify({ k: key, v: Buffer.from(vector.buffer as ArrayBuffer, vector.byteOffset, vector.byteLength).toString('base64') }),
+        JSON.stringify({ k: key, v: encodeBase64Vector(vector) }),
       )
-      writeFileSync(file, [...trimmed, ...serialized].join('\n') + '\n')
+      appendFileSync(file, serialized.join('\n') + '\n')
+      diskCacheLineCounts.set(model, memoizedCount + entries.length)
       return
     }
+    let totalLines = 0
+    if (memoizedCount === undefined) {
+      try {
+        if (existsSync(file)) {
+          totalLines = readFileSync(file, 'utf8').split('\n').filter(l => l.trim()).length
+        }
+      } catch {
+        totalLines = 0
+      }
+    } else {
+      totalLines = memoizedCount
+    }
+    if (totalLines <= keep) {
+      const serialized = entries.map(([key, vector]) =>
+        JSON.stringify({ k: key, v: encodeBase64Vector(vector) }),
+      )
+      appendFileSync(file, serialized.join('\n') + '\n')
+      diskCacheLineCounts.set(model, totalLines + entries.length)
+      return
+    }
+    // Rewrite with the newest `keep` old lines plus this batch.
+    const lines: string[] = []
+    try {
+      if (existsSync(file)) {
+        for (const line of readFileSync(file, 'utf8').split('\n')) {
+          if (line.trim()) lines.push(line.trim())
+        }
+      }
+    } catch {
+      // ignore rewrite-source read failure
+    }
+    const trimmed = lines.slice(Math.max(0, lines.length - keep))
     const serialized = entries.map(([key, vector]) =>
-      JSON.stringify({ k: key, v: Buffer.from(vector.buffer as ArrayBuffer, vector.byteOffset, vector.byteLength).toString('base64') }),
+      JSON.stringify({ k: key, v: encodeBase64Vector(vector) }),
     )
-    appendFileSync(file, serialized.join('\n') + '\n')
+    writeFileSync(file, [...trimmed, ...serialized].join('\n') + '\n')
+    diskCacheLineCounts.set(model, trimmed.length + serialized.length)
   } catch {
     // Cache write failure is non-fatal - search still works.
+    diskCacheLineCounts.delete(model)
   }
+}
+
+function encodeBase64Vector(vector: EmbeddingVector): string {
+  return Buffer.from(
+    vector.buffer as ArrayBuffer,
+    vector.byteOffset,
+    vector.byteLength,
+  ).toString('base64')
 }
 
 /** Test-only: wipe in-memory cache state. */
 export function resetEmbeddingMemoryCacheForTests(): void {
   memoryCache.clear()
   diskCacheLoadedModels.clear()
+  diskCacheLineCounts.clear()
 }
 
 const EMBED_BATCH_ITEMS = 32
@@ -297,7 +346,7 @@ export function createLocalEmbeddingBackend(): EmbeddingBackend {
         const cached = memoryCache.get(key)
         if (cached) return cached
         const vector = computeLocalEmbedding(text)
-        memoryCache.set(key, vector)
+        rememberVector(key, vector)
         return vector
       })
     },
@@ -323,6 +372,97 @@ export function createLocalEmbeddingBackend(): EmbeddingBackend {
 /** Default local ONNX embedding model (small, fast, cross-lingual-ish). */
 export const LOCAL_TRANSFORMERS_DEFAULT_MODEL = 'Xenova/all-MiniLM-L6-v2'
 
+/**
+ * Default model for Chinese locales: BAAI bge-small-zh-v1.5 distilled to ONNX.
+ * Similar size/speed class as MiniLM (~24MB q8) but dramatically better Chinese
+ * retrieval quality. Selected automatically from the environment locale unless
+ * CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING_MODEL overrides it.
+ */
+export const LOCAL_TRANSFORMERS_CHINESE_MODEL = 'Xenova/bge-small-zh-v1.5'
+
+// ---------------------------------------------------------------------------
+// Per-model inference recipe registry
+//
+// Embedding models are not interchangeable at inference time: pooling strategy
+// differs (BERT-style bge models use CLS, sentence-transformers use mean) and
+// retrieval-tuned models like BGE expect an instruction prefix on QUERY texts
+// only (documents stay unprefixed). Anything not listed gets the safe default:
+// mean pooling, no prefix — same behavior as before the registry existed.
+// ---------------------------------------------------------------------------
+
+interface LocalModelSpec {
+  /** Token pooling strategy applied before L2 normalization. */
+  pooling: 'mean' | 'cls'
+  /**
+   * Prefix prepended to query-side texts (embed(..., { forQuery: true })).
+   * Per BGE's retrieval recipe; improves recall, never applied to documents.
+   */
+  queryPrefix?: string
+}
+
+const LOCAL_MODEL_SPECS: Record<string, LocalModelSpec> = {
+  [LOCAL_TRANSFORMERS_DEFAULT_MODEL]: { pooling: 'mean' },
+  [LOCAL_TRANSFORMERS_CHINESE_MODEL]: {
+    pooling: 'cls',
+    // Official BAAI zh retrieval instruction (bge-small-zh-v1.5 model card).
+    queryPrefix: '为这个句子生成表示以用于检索相关文章：',
+  },
+}
+
+/** Inference recipe for a model id; unknown models fall back to mean/no-prefix. */
+export function localModelSpecFor(model: string): LocalModelSpec {
+  return LOCAL_MODEL_SPECS[model] ?? { pooling: 'mean' }
+}
+
+/** Best-effort BCP-47 tag from Intl, or null when unavailable. */
+function intlLocaleTag(): string | null {
+  try {
+    return new Intl.DateTimeFormat().resolvedOptions().locale ?? null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Pure locale decision used by isChineseLocale: do these signals indicate a
+ * Chinese-speaking user? Env vars win over the Intl default locale. Exported
+ * for deterministic tests.
+ */
+export function localePicksChinese(
+  envValues: ReadonlyArray<string | undefined>,
+  intlLocale?: string | null,
+): boolean {
+  // A set-but-non-Chinese env var still wins over Intl: LC_ALL=en on a
+  // zh Windows install means the shell locale is explicitly English, and
+  // Intl only papers over the OS default. Only fall through to Intl when
+  // every env var is unset.
+  const set = envValues.filter(v => v && v.trim())
+  if (set.length > 0) {
+    return set.some(v => /^zh/i.test(v!.trim()))
+  }
+  return !!intlLocale && /^zh/i.test(intlLocale)
+}
+
+/** True when any LANG-family env var or Intl locale looks like Chinese. */
+export function isChineseLocale(): boolean {
+  return localePicksChinese([
+    process.env['LC_ALL'],
+    process.env['LANG'],
+    process.env['LANGUAGE'],
+    process.env['LC_CTYPE'],
+  ], intlLocaleTag())
+}
+
+/**
+ * Pick the default local model for the current environment: the Chinese
+ * bge distillation on Chinese locales, MiniLM everywhere else. Explicit
+ * CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING_MODEL always wins over this choice
+ * (see resolveLocalTransformersModel).
+ */
+export function resolveDefaultLocalModel(): string {
+  return isChineseLocale() ? LOCAL_TRANSFORMERS_CHINESE_MODEL : LOCAL_TRANSFORMERS_DEFAULT_MODEL
+}
+
 function transformersCacheModel(model: string): string {
   // Include the inference dtype so vectors computed with a different
   // quantization are never mixed within one cache namespace.
@@ -334,15 +474,87 @@ export interface TransformersBackendOptions {
 }
 
 export interface TransformersPipeline {
-  run(texts: string[], opts: { pooling?: 'mean'; normalize?: boolean }): Promise<Float32Array>
+  run(texts: string[], opts: { pooling?: 'mean' | 'cls'; normalize?: boolean }): Promise<Float32Array>
 }
 
-let _transformersPipeline: Promise<TransformersPipeline> | null = null
-let _transformersModelName: string | null = null
+let _transformersPipeline: {
+  model: string
+  promise: Promise<TransformersPipeline>
+} | null = null
 
 export function resetTransformersPipelineForTests(): void {
   _transformersPipeline = null
-  _transformersModelName = null
+}
+
+// ---------------------------------------------------------------------------
+// First-download progress reporting
+//
+// The model auto-downloads (~23MB) on first use. Without feedback the user
+// stares at a silent prompt for seconds-to-minutes and assumes the app hung.
+// Transformers.js fires progress_callback per file with {status, progress,
+// loaded, total}; we render one throttled stderr line. Best-effort: any
+// error inside the reporter is swallowed.
+// ---------------------------------------------------------------------------
+
+const PROGRESS_MIN_INTERVAL_MS = 300
+const PROGRESS_MIN_STEP = 2
+
+/** Throttled single-line download reporter on stderr. Never throws. */
+function createDownloadProgressReporter(model: string): (data: unknown) => void {
+  let lastRenderedPct = -100
+  let lastRenderAt = 0
+  let finishedFiles = 0
+  let startedFiles = 0
+  const report = (data: unknown): void => {
+    try {
+      if (!data || typeof data !== 'object') return
+      const event = data as { status?: string; progress?: number; loaded?: number; total?: number; file?: string }
+      const now = Date.now()
+      if (event.status === 'initiate') {
+        startedFiles++
+      } else if (event.status === 'done' || event.status === 'ready') {
+        finishedFiles++
+        // Always announce completed files immediately - they are rare.
+        writeProgressLine(
+          `[cclite] fetching embedding model ${model} … ${finishedFiles}/${Math.max(startedFiles, finishedFiles)} files done`,
+          true,
+        )
+        lastRenderAt = now
+      } else if (event.status === 'progress' && typeof event.progress === 'number' && isFinite(event.progress)) {
+        const pct = Math.max(0, Math.min(100, Math.floor(event.progress)))
+        const due =
+          pct - lastRenderedPct >= PROGRESS_MIN_STEP ||
+          now - lastRenderAt >= PROGRESS_MIN_INTERVAL_MS ||
+          pct >= 100
+        if (!due) return
+        lastRenderedPct = pct
+        lastRenderAt = now
+        const mbLoaded = typeof event.loaded === 'number' ? (event.loaded / (1024 * 1024)).toFixed(1) : null
+        const mbTotal = typeof event.total === 'number' ? (event.total / (1024 * 1024)).toFixed(1) : null
+        const bytes = mbLoaded && mbTotal ? ` (${mbLoaded}/${mbTotal}MB)` : ''
+        writeProgressLine(`[cclite] fetching embedding model ${model} … ${pct}%${bytes}`, false)
+      }
+    } catch {
+      // Progress display must never break model loading.
+    }
+  }
+  return report
+}
+
+/**
+ * Render one progress line in place when stderr is a TTY (\r rewrite);
+ * otherwise print sparse newline-separated updates so piped logs stay sane.
+ */
+function writeProgressLine(line: string, finalNewline: boolean): void {
+  const tty = process.stderr.isTTY
+  if (tty) {
+    process.stderr.write('\r\x1b[K' + line)
+    if (finalNewline) process.stderr.write('\n')
+  } else if (finalNewline) {
+    process.stderr.write(line + '\n')
+  } else {
+    // Non-TTY: only milestone lines are written by callers via finalNewline.
+  }
 }
 
 async function defaultPipelineFactory(model: string): Promise<TransformersPipeline> {
@@ -360,16 +572,17 @@ async function defaultPipelineFactory(model: string): Promise<TransformersPipeli
     modEnv.backends.onnx ??= {}
     modEnv.backends.onnx.wasm ??= {}
   } catch { /* env shape may vary by version; non-fatal */ }
+  const spec = localModelSpecFor(model)
   const extractor = await mod.pipeline('feature-extraction', model, {
     // q8 quantization: ~4x smaller download (~23MB vs ~90MB for MiniLM) and
     // faster CPU inference, with negligible recall loss for search ranking.
     dtype: 'q8',
-    progress_callback: () => {},
+    progress_callback: createDownloadProgressReporter(model),
   })
   return {
     async run(texts, opts) {
       const out = await extractor(texts, {
-        pooling: opts.pooling ?? 'mean',
+        pooling: opts?.pooling ?? spec.pooling,
         normalize: opts.normalize ?? true,
       })
       const data = (out as any)?.data
@@ -387,17 +600,25 @@ export function createTransformersLocalBackend(
   opts?: TransformersBackendOptions,
 ): EmbeddingBackend {
   const cacheModel = transformersCacheModel(model)
+  const spec = localModelSpecFor(model)
   return {
     kind: 'local',
     label: 'local-semantic:' + model,
     semantic: true,
     async embed(texts, callOpts) {
       if (texts.length === 0) return []
+      // Query-side retrieval instruction (BGE recipe): applied before hashing,
+      // so prefixed queries cache under their own keys and documents are
+      // never polluted with the prefix.
+      const effectiveTexts =
+        callOpts?.forQuery && spec.queryPrefix
+          ? texts.map(text => (text.trim() ? spec.queryPrefix! + text : text))
+          : texts
       await loadDiskCache(cacheModel)
       const results: EmbeddingVector[] = new Array(texts.length)
       const misses: Array<{ index: number; text: string; key: string }> = []
       for (let i = 0; i < texts.length; i++) {
-        const text = texts[i]!
+        const text = effectiveTexts[i]!
         if (!text.trim()) { results[i] = new Float32Array(0); continue }
         const key = embeddingCacheKey(cacheModel, text)
         const cached = memoryCache.get(key)
@@ -406,17 +627,25 @@ export function createTransformersLocalBackend(
       }
       if (misses.length === 0) return results
 
-      if (!_transformersPipeline || _transformersModelName !== model) {
-        _transformersModelName = model
-        _transformersPipeline = (async () =>
-          opts?.pipelineFactory ? opts.pipelineFactory() : defaultPipelineFactory(model))()
+      // Load (or reuse) the pipeline for THIS model. The singleton is a
+      // {model, promise} tuple so concurrent calls for different models can
+      // never cross wires: each caller awaits the pipeline it triggered.
+      let entry = _transformersPipeline
+      if (!entry || entry.model !== model) {
+        entry = {
+          model,
+          promise: opts?.pipelineFactory
+            ? opts.pipelineFactory()
+            : defaultPipelineFactory(model),
+        }
+        _transformersPipeline = entry
       }
       let pipeline: TransformersPipeline
       try {
-        pipeline = await _transformersPipeline
+        pipeline = await entry.promise
       } catch (err) {
-        _transformersPipeline = null
-        _transformersModelName = null
+        // Only clear if a newer load has not already replaced us.
+        if (_transformersPipeline === entry) _transformersPipeline = null
         throw new EmbeddingError(
           'Could not load the local embedding model "' + model + '". ' +
           'Reinstall with the official installer (it provisions the embedding ' +
@@ -432,10 +661,9 @@ export function createTransformersLocalBackend(
       for (const batch of chunkBatches(misses.map(m => m.text))) {
         let flat: Float32Array
         try {
-          flat = await pipeline.run(batch, { pooling: 'mean', normalize: true })
+          flat = await pipeline.run(batch, { pooling: spec.pooling, normalize: true })
         } catch (err) {
-          _transformersPipeline = null
-          _transformersModelName = null
+          if (_transformersPipeline?.promise === entry.promise) _transformersPipeline = null
           throw new EmbeddingError(
             'Local model "' + model + '" inference failed: ' +
             (err instanceof Error ? err.message : String(err)).slice(0, 200),
@@ -452,7 +680,7 @@ export function createTransformersLocalBackend(
           newEntries.push([miss.key, vec])
         }
       }
-      for (const [key, vector] of newEntries) memoryCache.set(key, vector)
+      for (const [key, vector] of newEntries) rememberVector(key, vector)
       appendDiskCache(cacheModel, newEntries)
       return results
     },
@@ -465,8 +693,9 @@ export function resolveLocalTransformersModel(): string | null {
   if (flag === '0' || flag === 'false' || flag === 'off') return null
   const explicit = env('CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING_MODEL')
   if (explicit) return explicit
-  // Default-on: the local-semantic tier is the standard semantic backend.
-  return LOCAL_TRANSFORMERS_DEFAULT_MODEL
+  // Default-on, locale-aware: Chinese environments get bge-small-zh-v1.5,
+  // everything else MiniLM. CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING_MODEL wins.
+  return resolveDefaultLocalModel()
 }
 
 /**
@@ -482,5 +711,42 @@ export function resolveEmbeddingBackend(): EmbeddingBackend | null {
   const localModel = resolveLocalTransformersModel()
   if (localModel) return createTransformersLocalBackend(localModel)
   return createLocalEmbeddingBackend()
+}
+
+// ---------------------------------------------------------------------------
+// Background warm-up
+//
+// The embedding pipeline costs ~0.5-2s to load (and a one-time ~23MB download
+// on very first use). Warming it up shortly after startup means the first
+// semantic search is instant instead of paying that cost mid-conversation.
+// Fire-and-forget: every failure is swallowed, nothing is awaited, and the
+// timer is unref'd so it never keeps the process alive.
+// ---------------------------------------------------------------------------
+
+let warmupScheduled = false
+
+/**
+ * Schedule an idle-time pipeline warm-up. Safe to call multiple times (only
+ * the first call schedules). No-op when semantic search is disabled.
+ */
+export function scheduleEmbeddingWarmup(delayMs = 2_000): void {
+  if (warmupScheduled) return
+  if (isSemanticSearchDisabled()) return
+  warmupScheduled = true
+  const timer = setTimeout(() => {
+    try {
+      const backend = resolveEmbeddingBackend()
+      // Only the real model benefits from warming; the approximate fallback
+      // has no load cost at all.
+      if (!backend?.semantic) return
+      void backend.embed(['warmup']).catch(() => {
+        // Warm-up is best-effort; the search path reports real errors.
+      })
+    } catch {
+      // Never let warm-up scheduling break startup.
+    }
+  }, delayMs)
+  // Don't hold the event loop open for a warm-up the process may never need.
+  ;(timer as unknown as { unref?: () => void }).unref?.()
 }
 

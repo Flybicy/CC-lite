@@ -74,15 +74,13 @@ This build strips those injections. The model's own safety training still applie
 
 ### 6. Experimental features enabled
 
-Claude Code ships with dozens of feature flags gated behind `bun:bundle` compile-time switches. Most are disabled in the public npm release. This build unlocks all 45+ flags that compile cleanly, including:
+Claude Code ships with dozens of feature flags gated behind `bun:bundle` compile-time switches. Most are disabled in the public npm release. This build unlocks every flag that both compiles cleanly and actually works without claude.ai OAuth, including:
 
 | Feature | What it does |
 |---|---|
-| `ULTRAPLAN` | Remote multi-agent planning on Claude Code web (Opus-class) |
 | `ULTRATHINK` | Deep thinking mode -- type "ultrathink" to boost reasoning effort |
 | `VOICE_MODE` | Push-to-talk voice input and dictation |
 | `AGENT_TRIGGERS` | Local cron/trigger tools for background automation |
-| `BRIDGE_MODE` | IDE remote-control bridge (VS Code, JetBrains) |
 | `TOKEN_BUDGET` | Token budget tracking and usage warnings |
 | `BUILTIN_EXPLORE_PLAN_AGENTS` | Built-in explore/plan agent presets |
 | `VERIFICATION_AGENT` | Verification agent for task validation |
@@ -94,6 +92,12 @@ Claude Code ships with dozens of feature flags gated behind `bun:bundle` compile
 | `SHOT_STATS` | Shot-distribution stats |
 | `COMPACTION_REMINDERS` | Smart reminders around context compaction |
 | `CACHED_MICROCOMPACT` | Cached microcompact state through query flows |
+
+> Flags that hard-depend on stripped claude.ai infrastructure -- `ULTRAPLAN`
+> (remote CCR planning, needs `/login`) and `BRIDGE_MODE` (Remote Control
+> bridge, gated on claude.ai subscription) -- are excluded on purpose, along
+> with the other OAuth-only flags (`CCR_*`, `AGENT_TRIGGERS_REMOTE`).
+> Enabling them would only ship dead code. See [FEATURES.md](FEATURES.md).
 
 See [FEATURES.md](FEATURES.md) for the full audit of all 88 flags and their status.
 
@@ -230,7 +234,7 @@ bun run verify:embeddings
 |---|---|---|---|
 | `bun run build` | `./cclite-cli` | `VOICE_MODE` only | Production-like binary |
 | `bun run build:dev` | `./cclite-cli-dev` | `VOICE_MODE` only | Dev version stamp |
-| `bun run build:dev:full` | `./cclite-cli-dev` | All 45+ experimental flags | The full unlock build |
+| `bun run build:dev:full` | `./cclite-cli-dev` | All working experimental flags | The full unlock build |
 | `bun run compile` | `./dist/cclite-cli` | `VOICE_MODE` only | Alternative output directory |
 | `bun run build:bundle:cclite` | `./cclite.js` | cclite feature set | **What the installers ship.** Needs a sibling `node_modules` for the embedding stack; the only variant where the real semantic model runs |
 
@@ -244,11 +248,11 @@ bun run verify:embeddings
 You can enable specific flags without the full bundle:
 
 ```bash
-# Enable just ultraplan and ultrathink
-bun run ./scripts/build.ts --feature=ULTRAPLAN --feature=ULTRATHINK
+# Enable just ultrathink and token budget
+bun run ./scripts/build.ts --feature=ULTRATHINK --feature=TOKEN_BUDGET
 
 # Enable a specific flag on top of the dev build
-bun run ./scripts/build.ts --dev --feature=BRIDGE_MODE
+bun run ./scripts/build.ts --dev --feature=MCP_RICH_OUTPUT
 ```
 
 ---
@@ -349,13 +353,21 @@ machine. Two backends, resolved in this priority order:
 1. **local-semantic** (default, true semantics) -- a real embedding model
    running **in-process** via
    [`@huggingface/transformers`](https://huggingface.co/docs/transformers.js)
-   (ONNX/WASM, mean-pooled + L2-normalized), labeled
-   `local-semantic:<model>`. **The installer sets this up completely**: it
-   provisions the runtime, pre-downloads the model, and verifies real
+   (ONNX/WASM, L2-normalized; mean-pooled for MiniLM, CLS-pooled + query-side
+   instruction prefix for bge models per their official retrieval recipe),
+   labeled `local-semantic:<model>`. **The installer sets this up completely**:
+   it provisions the runtime, pre-downloads the model, and verifies real
    inference before finishing -- nothing to configure. From source,
    `bun install` is enough. Everything after the one-time ~23 MB download
    works fully offline. Vectors are additionally cached on disk (JSONL per
    model), so unchanged messages are never re-embedded, even across restarts.
+   - **Locale-aware Chinese default**: on a zh locale the default model is
+     `Xenova/bge-small-zh-v1.5` (far better Chinese retrieval than MiniLM);
+     everything else gets MiniLM. An explicit
+     `CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING_MODEL` always wins.
+   - **Download progress**: the first fetch prints live percent/bytes progress.
+   - **Startup warm-up**: the interactive REPL preloads the pipeline in the
+     background ~2s after launch, so the first search pays zero load cost.
    Note: the standalone `--compile` binary cannot load ONNX Runtime's native
    library from its virtual filesystem, so semantic search degrades there --
    this is exactly why the installers ship the `cclite.js` bundle instead.
@@ -370,8 +382,8 @@ machine. Two backends, resolved in this priority order:
 
 | Model | Size | Notes |
 |---|---|---|
-| `Xenova/all-MiniLM-L6-v2` (default) | ~23 MB | fast, English-leaning |
-| `Xenova/bge-small-zh-v1.5` | ~23 MB | **recommended for Chinese** conversations |
+| `Xenova/all-MiniLM-L6-v2` (default outside zh locales) | ~23 MB | fast, English-leaning |
+| `Xenova/bge-small-zh-v1.5` (**auto-selected on zh locales**) | ~23 MB | **recommended for Chinese**, CLS pooling + query prefix applied automatically |
 | `Xenova/multilingual-e5-small` | ~120 MB | strongest multilingual recall |
 
 Pick a model with `CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING_MODEL`. The download
@@ -381,15 +393,15 @@ lands in the cache dir (next to the vector cache) and is reused forever.
 
 | Variable | Description |
 |---|---|
-| `CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING_MODEL` | Transformers.js/ONNX model id for the local-semantic tier (default `Xenova/all-MiniLM-L6-v2`; use `Xenova/bge-small-zh-v1.5` for Chinese). Downloaded once on first use, then offline. |
+| `CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING_MODEL` | Transformers.js/ONNX model id for the local-semantic tier. When unset, picked by locale: `Xenova/bge-small-zh-v1.5` on Chinese systems, `Xenova/all-MiniLM-L6-v2` elsewhere. Downloaded once on first use, then offline. |
 | `CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING` | Set to `0`, `false`, or `off` to skip the model tier and use the approximate local fallback instead. |
 | `CLAUDE_CODE_ADVISOR_SEMANTIC_SEARCH` | Set to `0`, `false`, or `off` to disable semantic/hybrid modes entirely (mode then ignored, keyword used). Alias: `CLAUDE_CODE_SEMANTIC_SEARCH`. |
 | `CLAUDE_CODE_ADVISOR_EMBEDDING_CACHE_DIR` | Override the on-disk cache directory for models and vectors (useful for tests / ephemeral CI). |
 
-**Example (Chinese conversations):**
+**Example (Chinese conversations):** on a zh locale nothing to configure --
 ```bash
-export CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING_MODEL="Xenova/bge-small-zh-v1.5"
-# first semantic search downloads ~23 MB once; everything is offline after that
+echo $LANG   # zh_CN.UTF-8 → Xenova/bge-small-zh-v1.5 picked automatically
+# first semantic search downloads ~23 MB (with progress); offline after that
 ```
 
 If the model tier is unavailable (e.g. inside the compiled binary without
@@ -441,6 +453,28 @@ what was discussed before -- prior entries appear in `index` tagged
 The archive is FIFO-bounded (newest 4000 entries), never duplicates unchanged
 messages across runs/resumes, and all persistence is best-effort -- a failing
 disk never breaks the Advisor.
+
+### Session picker -- semantic supplement
+
+The `/resume` (and `--resume`) session picker scores candidate sessions with
+the **same local embedding model** in addition to its keyword filter: when a
+search dead-ends on titles/branches/tags, topically related sessions still
+appear at the end of the list (up to 12 extras, cosine >= 0.3). Fully
+offline, zero API cost, best-effort -- when embeddings are unavailable the
+picker behaves exactly as before. Session vectors share the disk cache, so
+repeat searches are nearly free.
+
+### Copy on select · ctrl+y to paste into the prompt
+
+- **Copy on select**: finishing a mouse selection (drag or multi-click) copies
+  it automatically -- OSC 52 / tmux / pbcopy / wl-copy fallbacks. Disable via
+  `copyOnSelect` in `/config`.
+- **In-app clipboard floor**: every copy is also mirrored into CC-lite's
+  internal clipboard, so copying **always works** even when the terminal
+  lacks OSC 52 support or wl-copy/xclip.
+- **ctrl+y pastes into the prompt**: inserts the most recent copy at the
+  cursor (readline yank; passes through over SSH/tmux everywhere). Long text
+  folds into a paste pill. Rebind via `chat:yank` in `keybindings.json`.
 
 ---
 
@@ -576,6 +610,49 @@ export CLAUDE_CODE_USE_OPENAI=1
 | `CLAUDE_CODE_SUBAGENT_SUMMARY_OUTPUT_TOKENS` | Override summary output token reservation for subagents |
 | `CLAUDE_CODE_ADVISOR_MAX_CONTEXT_TOKENS` | Override max context window size for the advisor tool |
 | `CLAUDE_CODE_ADVISOR_BUFFER_TOKENS` | Override auto-compact buffer size for the advisor tool |
+| `CCLITE_TURBO` | Set to `1` (or use `--turbo` / `/turbo`) to enable turbo high-concurrency mode |
+| `CCLITE_TURBO_HEDGES` | Total hedged attempts per request including the original (default `2`, max `4`) |
+| `CCLITE_TURBO_HEDGE_DELAY_MS` | Stagger between hedged attempt starts (default `8000`) |
+| `CCLITE_TURBO_ATTEMPT_TIMEOUT_MS` | Abort an attempt that shows no progress within this window; the race continues (`0` = off) |
+| `CCLITE_TURBO_INCLUDE_LOCAL` | Set to `1` to hedge against local servers (Ollama/LM Studio) too — usually pointless, it just doubles GPU load |
+| `CCLITE_SEMANTIC_RERANK` | Set to `1` to rerank SearXNG results by local-model semantic similarity (offline, no API cost) |
+
+### Turbo high-concurrency mode (`--turbo` / `/turbo`)
+
+Some providers are slow per request but tolerate high concurrency. Turbo mode
+exploits that with **hedged requests**: the same request is fired up to
+`CCLITE_TURBO_HEDGES` times, staggered `CCLITE_TURBO_HEDGE_DELAY_MS` apart. The
+first stream to produce real content wins; every other attempt is aborted.
+On a slow relay this cuts first-token tail latency dramatically — at the cost
+of extra billed input tokens for the aborted duplicates.
+
+Concurrency is **dynamic**, not a static switch:
+
+- An AIMD governor (TCP-style congestion control) starts at the configured
+  ceiling and adapts per request: sustained successes raise the allowance,
+  429s/server errors halve it and open a cooldown, and local event-loop
+  saturation (sampled every second) does the same. The floor is a single
+  request, so under pressure the mode degrades gracefully instead of freezing
+  the CLI.
+- The same allowance drives parallel tool/subagent fan-out in turbo mode
+  (ceiling 20; `CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY` stays authoritative).
+- Local backends (Ollama/LM Studio) gain nothing from duplicate requests, so
+  they are skipped unless `CCLITE_TURBO_INCLUDE_LOCAL=1`.
+- `CCLITE_TURBO_ATTEMPT_TIMEOUT_MS` reaps silently-hanging attempts so one dead
+  upstream connection can never stall the race.
+
+Check live behavior with `/turbo status` (shows current allowance and measured
+event-loop lag). Applies to OpenAI-compatible providers (Chat Completions and
+Responses transports); the native Anthropic path is untouched.
+
+**turbo + bypassPermissions compose freely**: bypass only changes the
+permission layer, turbo only the API/tool layers — e.g.
+`CCLITE_TURBO=1 cclite-bypass -p "..."` runs both at once.
+
+```bash
+cclite --turbo                     # session-long turbo mode
+# or toggle inside a session: /turbo on | /turbo off | /turbo status
+```
 | `CLAUDE_CODE_ADVISOR_SUMMARY_OUTPUT_TOKENS` | Override summary output token reservation for the advisor tool |
 
 **Autocompact buffer** = `CLAUDE_CODE_SUMMARY_OUTPUT_TOKENS` + `CLAUDE_CODE_AUTO_COMPACT_BUFFER_TOKENS`
@@ -732,6 +809,9 @@ Notes:
 - This only changes the `WebSearch` tool. `WebFetch` still fetches page content directly.
 - `allowed_domains` and `blocked_domains` are still supported, but filtering is applied locally after SearXNG returns results.
 - If `CLAUDE_CODE_SEARXNG_BASE_URL` is unset, CC-lite falls back to the default provider behavior.
+- Optional: set `CCLITE_SEMANTIC_RERANK=1` and hits are reranked by semantic
+  similarity to the query using the local advisor embedding model — offline,
+  free, best-effort (any failure keeps the original order).
 
 ---
 

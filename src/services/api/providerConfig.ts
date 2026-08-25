@@ -219,6 +219,13 @@ export function resolveProviderRequest(options?: {
   model?: string
   baseUrl?: string
   fallbackModel?: string
+  /**
+   * Per-provider transport override (CC-lite WebUI providers.json apiMode).
+   * 'responses' / 'chat_completions' pin the endpoint style for openai-
+   * backend requests; codex-backend requests always stay on responses since
+   * chatgpt.com/backend-api/codex has no chat-completions surface.
+   */
+  apiMode?: string
 }): ResolvedProviderRequest {
   const requestedModel =
     options?.model?.trim() ||
@@ -235,15 +242,22 @@ export function resolveProviderRequest(options?: {
     isCodexAlias(requestedModel) || isCodexBaseUrl(rawBaseUrl)
       ? 'codex'
       : 'openai'
+  const forcedTransport =
+    options?.apiMode === 'responses'
+      ? 'responses'
+      : options?.apiMode === 'chat_completions'
+        ? 'chat_completions'
+        : undefined
   const transport: ProviderTransport =
     backend === 'codex'
       ? 'responses'
-      : shouldUseOpenAIResponsesApi({
+      : (forcedTransport ??
+        (shouldUseOpenAIResponsesApi({
           baseUrl: rawBaseUrl,
           descriptor,
         })
-        ? 'responses'
-        : 'chat_completions'
+          ? 'responses'
+          : 'chat_completions'))
 
   return {
     transport,

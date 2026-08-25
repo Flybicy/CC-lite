@@ -136,6 +136,7 @@ export async function getAnthropicClient({
         baseUrl: tierConn.baseURL,
         apiKey: tierConn.apiKey,
         model: tierConn.model,
+        apiMode: tierConn.apiMode,
       },
     }) as unknown as Anthropic
   }

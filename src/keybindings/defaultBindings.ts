@@ -68,7 +68,6 @@ export const DEFAULT_BINDINGS: KeybindingBlock[] = [
       'ctrl+x ctrl+k': 'chat:killAgents',
       [MODE_CYCLE_KEY]: 'chat:cycleMode',
       'meta+p': 'chat:modelPicker',
-      'meta+o': 'chat:fastMode',
       'meta+t': 'chat:thinkingToggle',
       enter: 'chat:submit',
       up: 'history:previous',
@@ -85,6 +84,10 @@ export const DEFAULT_BINDINGS: KeybindingBlock[] = [
       'ctrl+s': 'chat:stash',
       // Image paste shortcut (platform-specific key defined above)
       [IMAGE_PASTE_KEY]: 'chat:imagePaste',
+      // Yank from the in-app selection clipboard (copy-on-select mirror).
+      // ctrl+y = readline yank: reaches the pty in every terminal, over SSH
+      // included, unlike terminal-dependent system-clipboard pastes.
+      'ctrl+y': 'chat:yank',
       ...(feature('MESSAGE_ACTIONS')
         ? { 'shift+up': 'chat:messageActions' as const }
         : {}),

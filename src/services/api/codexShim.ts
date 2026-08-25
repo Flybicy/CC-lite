@@ -1,7 +1,30 @@
+import { APIError } from '@anthropic-ai/sdk'
 import type {
   ResolvedCodexCredentials,
   ResolvedProviderRequest,
 } from './providerConfig.js'
+
+/**
+ * Convert an upstream non-2xx into an APIError so the retry/balance
+ * machinery upstream (withRetry.isBalanceError, shouldRetry,
+ * shouldTriggerTierFallback) can classify it, mirroring openaiShim.ts.
+ * A plain Error would make every Codex-backend failure non-retryable and
+ * invisible to the tier fallback chain.
+ */
+function throwUpstreamError(
+  status: number,
+  errorBody: string,
+  label: string,
+): never {
+  const message = `${label} ${status}: ${errorBody}`
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(errorBody)
+  } catch {
+    parsed = undefined
+  }
+  throw new APIError(status, parsed as object | undefined, message, new Headers())
+}
 
 export interface AnthropicUsage {
   input_tokens: number
@@ -489,7 +512,7 @@ export async function performCodexRequest(options: {
 
   if (!response.ok) {
     const errorBody = await response.text().catch(() => 'unknown error')
-    throw new Error(`Codex API error ${response.status}: ${errorBody}`)
+    throwUpstreamError(response.status, errorBody, 'Codex API error')
   }
 
   return response

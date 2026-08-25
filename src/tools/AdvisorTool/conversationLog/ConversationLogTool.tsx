@@ -234,10 +234,12 @@ function createConversationLogTool(
     }
 
     // Query embedding - same backend, benefits from the same caches.
+    // forQuery: true lets retrieval-tuned models (e.g. BGE zh) apply their
+    // query-side instruction prefix; entry vectors above stay unprefixed.
     const queryText = input.query.length > 3_000 ? input.query.slice(0, 3_000) : input.query
     let queryVector: EmbeddingVector
     try {
-      ;[queryVector] = await backend.embed([queryText], { signal })
+      ;[queryVector] = await backend.embed([queryText], { signal, forQuery: true })
     } catch (err) {
       const detail = err instanceof EmbeddingError ? err.message : String(err)
       throw new EmbeddingError(`Failed to embed the search query: ${detail}`)

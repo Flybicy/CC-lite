@@ -7,6 +7,7 @@
 // ---------------------------------------------------------------------------
 
 import {
+  LOCAL_TRANSFORMERS_CHINESE_MODEL,
   LOCAL_TRANSFORMERS_DEFAULT_MODEL,
   resolveEmbeddingBackend,
   resolveLocalTransformersModel,
@@ -28,7 +29,11 @@ if (!model) {
 }
 
 console.log(`[*] Prefetching embedding model: ${model}`)
-console.log(`    (default: ${LOCAL_TRANSFORMERS_DEFAULT_MODEL}, ~23MB q8 quantized, one time)`)
+console.log(
+  `    (defaults: ${LOCAL_TRANSFORMERS_DEFAULT_MODEL}, or ${LOCAL_TRANSFORMERS_CHINESE_MODEL} ` +
+    `on Chinese locales; ~23MB q8 quantized, one time. Override with ` +
+    `CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING_MODEL)`,
+)
 
 const backend = resolveEmbeddingBackend()
 if (!backend?.semantic) {

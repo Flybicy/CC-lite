@@ -7,6 +7,10 @@ import type {
 } from '@anthropic-ai/sdk/resources/beta/messages/messages.mjs'
 import { randomUUID } from 'crypto'
 import { getUserAgent } from '../../utils/http.js'
+import {
+  isSemanticRerankEnabled,
+  rerankBySimilarity,
+} from './rerank.js'
 
 export const SEARXNG_BASE_URL_ENV_VAR = 'CLAUDE_CODE_SEARXNG_BASE_URL'
 
@@ -128,7 +132,16 @@ export async function performSearxngWebSearch({
   }
 
   const payload = (await response.json()) as SearxngSearchResponse
-  const filteredResults = filterSearxngResults(payload.results ?? [], request)
+  let filteredResults = filterSearxngResults(payload.results ?? [], request)
+  // Optional local-model rerank: order hits by semantic similarity to the
+  // query (CCLITE_SEMANTIC_RERANK=1). Best-effort — never throws.
+  if (isSemanticRerankEnabled()) {
+    filteredResults = await rerankBySimilarity(
+      request.query,
+      filteredResults,
+      result => (typeof result.content === 'string' ? `${result.title ?? ''}\n${result.content}` : ''),
+    )
+  }
   return buildSearxngWebSearchBlocks(request, filteredResults)
 }
 

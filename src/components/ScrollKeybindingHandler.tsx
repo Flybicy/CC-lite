@@ -6,6 +6,7 @@ import { useSelection } from '../ink/hooks/use-selection.js';
 import type { FocusMove, SelectionState } from '../ink/selection.js';
 import { isXtermJs } from '../ink/terminal.js';
 import { getClipboardPath } from '../ink/termio/osc.js';
+import { setAppClipboard } from '../utils/appClipboard.js';
 // eslint-disable-next-line custom-rules/prefer-use-keybindings -- Esc needs conditional propagation based on selection state
 import { type Key, useInput } from '../ink.js';
 import { useKeybindings } from '../keybindings/useKeybinding.js';
@@ -388,6 +389,9 @@ export function ScrollKeybindingHandler({
         msg = `sent ${n} chars via OSC 52 · check terminal clipboard settings if paste fails`;
         break;
     }
+    // The in-app copy always worked — ctrl+y inserts it into the prompt
+    // without touching the system clipboard at all.
+    msg += ` · ctrl+y pastes into prompt`;
     addNotification({
       key: 'selection-copied',
       text: msg,
@@ -398,7 +402,10 @@ export function ScrollKeybindingHandler({
   }
   function copyAndToast(): void {
     const text_0 = selection.copySelection();
-    if (text_0) showCopiedToast(text_0);
+    if (text_0) {
+      setAppClipboard(text_0);
+      showCopiedToast(text_0);
+    }
   }
 
   // Translate selection to track a keyboard page jump. Selection coords are

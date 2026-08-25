@@ -59,6 +59,7 @@ import { generateToolUseSummary } from './services/toolUseSummary/toolUseSummary
 import { prependUserContext, appendSystemContext } from './utils/api.js'
 import { isTierAlias } from './utils/model/aliases.js'
 import { resolveTierModel } from './utils/model/modelProfiles.js'
+import { resolveTierConnectionByTier } from './utils/providers/tierResolver.js'
 import {
   createAttachmentMessage,
   filterDuplicateMemoryAttachments,
@@ -343,16 +344,37 @@ async function* queryLoop(
   // skipped: pro binding missing → undefined (no auto-fallback). Recomputed
   // per iteration so a pro→plus fallback itself can fall back to se.
   const explicitFallback = params.fallbackModel
+  // Two tiers bound to the same endpoint + key + model fail identically —
+  // hopping between them burns a fallback round and shows a bogus "switched"
+  // notice while every request still hits the same owing provider. Treat such
+  // adjacent bindings as one hop and keep walking the chain.
+  const isNoOpHop = (from: string, to: string): boolean => {
+    if (!isTierAlias(from) || !isTierAlias(to)) return false
+    const cf = resolveTierConnectionByTier(from)
+    const ct = resolveTierConnectionByTier(to)
+    if (cf.source !== 'routing' || ct.source !== 'routing') return false
+    return (
+      cf.type === ct.type &&
+      cf.baseURL === ct.baseURL &&
+      cf.apiKey === ct.apiKey &&
+      cf.model === ct.model
+    )
+  }
   const fallbackForIteration = (codename: string): string | undefined => {
     // Session cap: after MAX_TIER_FALLBACKS automatic downgrades we stop
     // masking the outage and surface the error instead.
     if ((chainExtras.ccLiteFallbackRounds ?? 0) >= MAX_TIER_FALLBACKS) {
       return undefined
     }
-    if (!isTierAlias(codename) || codename === 'se') return undefined
-    if (!resolveTierModel(codename)) return undefined
-    const next = codename === 'pro' ? 'plus' : 'se'
-    return resolveTierModel(next) ? next : undefined
+    let cur = codename
+    while (isTierAlias(cur) && cur !== 'se') {
+      if (!resolveTierModel(cur)) return undefined
+      const next = cur === 'pro' ? 'plus' : 'se'
+      if (!resolveTierModel(next)) return undefined
+      if (!isNoOpHop(cur, next)) return next
+      cur = next
+    }
+    return undefined
   }
 
   // Mutable cross-iteration state. The loop body destructures this at the top
@@ -702,7 +724,13 @@ async function* queryLoop(
     // tiers and stop at the first unbound one. We consult the codename
     // recorded in state — options.mainLoopModel gets overwritten with a
     // concrete model id after a fallback, but the codename must persist.
-    const fallbackModel =
+    //
+    // `let` + recomputed in the FallbackTriggeredError catch below: with the
+    // old single-shot const, a second failure in the same turn re-threw the
+    // STALE target (pro→plus again), so when two tiers shared one provider
+    // (e.g. pro and plus both bound to the same owing relay) the chain never
+    // advanced past it — model name changed, provider didn't.
+    let fallbackModel =
       explicitFallback ??
       fallbackForIteration(state.tierCodenameOfCurrentChain ?? '')
 
@@ -1042,7 +1070,11 @@ async function* queryLoop(
           }
         } catch (innerError) {
           if (innerError instanceof FallbackTriggeredError && fallbackModel) {
-            // Fallback was triggered - switch model and retry
+            // Fallback was triggered - switch model and retry.
+            // `switchedTo` pins the tier this failure just landed us on;
+            // `fallbackModel` is recomputed below into the NEXT hop for the
+            // retry's own failover target.
+            const switchedTo = fallbackModel
             // Count the round and, on balance errors, move the session's
             // home pointer forward so we never climb back to a tier whose
             // provider has no credit ("余额不足 → 切换了就不再换回来").
@@ -1050,20 +1082,29 @@ async function* queryLoop(
               (chainExtras.ccLiteFallbackRounds ?? 0) + 1
             if (innerError.reason === 'balance') {
               chainExtras.ccLiteTierSticky = true
-              chainExtras.ccLiteTierHome = fallbackModel
+              chainExtras.ccLiteTierHome = switchedTo
             }
             // Advance the codename chain so a repeated failure can degrade
             // again (pro→plus→se). We record the tier we just stepped down
             // to; if the next iteration's fallback also fails, its successor
             // is picked via this chain.
-            if (isTierAlias(fallbackModel)) {
+            if (isTierAlias(switchedTo)) {
               state = {
                 ...state,
-                tierCodenameOfCurrentChain: fallbackModel,
+                tierCodenameOfCurrentChain: switchedTo,
               }
-              chainExtras.ccLiteTierCurrent = fallbackModel
+              chainExtras.ccLiteTierCurrent = switchedTo
             }
-            currentModel = fallbackModel
+            currentModel = switchedTo
+            // Recompute the next hop from the tier we just landed on. This is
+            // what lets the chain advance past a duplicate-provider binding
+            // within one turn (pro→plus→se when pro/plus share a provider):
+            // the retry's withRetry must throw toward 'se', not replay the
+            // stale 'plus'. Undefined here means "no further tier" — the next
+            // failure surfaces as a real error instead of another hop.
+            fallbackModel =
+              explicitFallback ??
+              fallbackForIteration(state.tierCodenameOfCurrentChain ?? '')
             attemptWithFallback = true
 
             // Clear assistant messages since we'll retry the entire request
@@ -1089,7 +1130,7 @@ async function* queryLoop(
             }
 
             // Update tool use context with new model
-            toolUseContext.options.mainLoopModel = fallbackModel
+            toolUseContext.options.mainLoopModel = switchedTo
 
             // Thinking signatures are model-bound: replaying a protected-thinking
             // block (e.g. capybara) to an unprotected fallback (e.g. opus) 400s.
@@ -1103,7 +1144,7 @@ async function* queryLoop(
               original_model:
                 innerError.originalModel as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
               fallback_model:
-                fallbackModel as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
+                innerError.fallbackModel as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
               entrypoint:
                 'cli' as AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS,
               queryChainId: queryChainIdForAnalytics,

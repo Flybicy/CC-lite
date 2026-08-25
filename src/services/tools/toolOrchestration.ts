@@ -2,13 +2,20 @@ import type { ToolUseBlock } from '@anthropic-ai/sdk/resources/index.mjs'
 import type { CanUseToolFn } from '../../hooks/useCanUseTool.js'
 import { findToolByName, type ToolUseContext } from '../../Tool.js'
 import type { AssistantMessage, Message } from '../../types/message.js'
+import { getTurboToolConcurrency } from '../api/turboGovernor.js'
+import { isCcliteTurboEnabled } from '../api/hedgedRequest.js'
 import { all } from '../../utils/generators.js'
 import { type MessageUpdateLazy, runToolUse } from './toolExecution.js'
 
+const DEFAULT_TOOL_USE_CONCURRENCY = 10
+
 function getMaxToolUseConcurrency(): number {
-  return (
-    parseInt(process.env.CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY || '', 10) || 10
-  )
+  const explicit = parseInt(process.env.CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY || '', 10)
+  if (explicit > 0) return explicit
+  // Fast mode starts at the ceiling and the governor dynamically raises or
+  // lowers it based on provider feedback and local event-loop pressure.
+  if (isCcliteTurboEnabled()) return getTurboToolConcurrency()
+  return DEFAULT_TOOL_USE_CONCURRENCY
 }
 
 export type MessageUpdate = {

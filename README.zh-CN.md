@@ -23,13 +23,13 @@
 新增 API 适配层（`src/services/api/openaiShim.ts`），在 Anthropic 消息格式与 OpenAI 兼容 API 之间透明转换，同时支持 Chat Completions 与新版 Responses API。所有工具（bash、文件读写、grep、glob、agents、MCP 等）在换用不同后端大模型后照常工作。
 
 ### 4. SearXNG 版 WebSearch
-可用一个环境变量 `CLAUDE_CODE_SEARXNG_BASE_URL` 让内置 `WebSearch` 走你自己的 SearXNG 实例，而不是依赖提供方的服务端搜索；未设置时回退默认行为。
+可用一个环境变量 `CLAUDE_CODE_SEARXNG_BASE_URL` 让内置 `WebSearch` 走你自己的 SearXNG 实例，而不是依赖提供方的服务端搜索；未设置时回退默认行为。可选：设置 `CCLITE_SEMANTIC_RERANK=1` 后，会用本地 advisor 嵌入模型按与查询的语义相似度对结果重排——完全离线、零 API 成本、尽力而为（任何失败都保持原始顺序）。
 
 ### 5. 移除安全提示词护栏
 Anthropic 会向每条对话注入系统级指令（硬编码拒答模式、"网络风险"指令块、托管安全设置覆盖）。本构建移除这些注入层 —— 模型自身的安全训练仍然生效，只是去掉 CLI 额外包裹的那层提示词限制。
 
 ### 6. 解锁实验性功能
-解锁所有能干净编译的 45+ 个功能开关：`ULTRAPLAN`、`ULTRATHINK`、`VOICE_MODE`、`AGENT_TRIGGERS`、`BRIDGE_MODE`、`TOKEN_BUDGET`、`VERIFICATION_AGENT`、`EXTRACT_MEMORIES`、`HISTORY_PICKER`、`MESSAGE_ACTIONS`、`QUICK_SEARCH`、`SHOT_STATS`、`COMPACTION_REMINDERS` 等。全部 88 个开关的审计见 [FEATURES.md](FEATURES.md)。
+解锁所有能干净编译且**在本 fork 中真正可用**的功能开关：`ULTRATHINK`、`VOICE_MODE`、`AGENT_TRIGGERS`、`TOKEN_BUDGET`、`VERIFICATION_AGENT`、`EXTRACT_MEMORIES`、`HISTORY_PICKER`、`MESSAGE_ACTIONS`、`QUICK_SEARCH`、`SHOT_STATS`、`COMPACTION_REMINDERS` 等。依赖 claude.ai OAuth（已剥离）的死开关 —— `ULTRAPLAN`（远程 CCR 规划）、`BRIDGE_MODE`（Remote Control 桥接）等 —— 与上游其余死开关一并排除。全部 88 个开关的审计见 [FEATURES.md](FEATURES.md)。
 
 ---
 
@@ -99,7 +99,7 @@ bun run verify:embeddings      # 端到端验证本地语义模型（首次会�
 
 按需单独开启某个开关：
 ```bash
-bun run ./scripts/build.ts --feature=ULTRAPLAN --feature=ULTRATHINK
+bun run ./scripts/build.ts --feature=ULTRATHINK --feature=TOKEN_BUDGET
 ```
 
 ---
@@ -152,11 +152,17 @@ Advisor 通过 `ReadConversationLog` 工具读取主代理对话历史，支持�
 
 1. **local-semantic（默认，真语义）** —— 通过
    [`@huggingface/transformers`](https://huggingface.co/docs/transformers.js)
-   **进程内**运行真实嵌入模型（ONNX/WASM，mean-pool + L2 归一化），标记为
+   **进程内**运行真实嵌入模型（ONNX/WASM，L2 归一化；MiniLM 用 mean-pool，
+   bge 系列按官方配方用 CLS-pool + 查询侧指令前缀），标记为
    `local-semantic:<model>`。**安装器已经全部配好**：装运行时、预下载模型、
    跑真实推理自检，全部在安装过程内完成，无需任何配置。源码运行只需
    `bun install`。一次性 ~23MB 下载之后完全离线。向量还有第二层磁盘缓存
    （每模型一个 JSONL），未变化的消息永不重复嵌入，重启也不丢。
+   - **中文环境自动切换**：系统 locale 为中文时默认使用 `Xenova/bge-small-zh-v1.5`
+     （CLS 池化 + 查询前缀，中文检索质量远好于 MiniLM），其他语言用 MiniLM。
+     显式设置 `CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING_MODEL` 时以显式值为准。
+   - **首次下载有进度显示**：模型在下载时会实时打印百分比与字节数到 stderr。
+   - **启动预热**：交互式 REPL 启动约 2 秒后在后台预加载模型，第一次搜索零等待。
    > 注意：`bun run compile` 的单文件二进制无法从虚拟文件系统加载 ONNX Runtime
    > 原生库，语义会退回近似兜底 —— 这正是安装器改为分发 `cclite.js` bundle 的原因。
 2. **local-approximate（兜底）** —— 确定性的哈希词袋向量器，**不是**真语义；
@@ -167,8 +173,8 @@ Advisor 通过 `ReadConversationLog` 工具读取主代理对话历史，支持�
 
 | 模型 | 大小 | 说明 |
 |---|---|---|
-| `Xenova/all-MiniLM-L6-v2`（默认） | ~23 MB | 快，偏英文 |
-| `Xenova/bge-small-zh-v1.5` | ~23 MB | **中文对话推荐** |
+| `Xenova/all-MiniLM-L6-v2`（非中文环境默认） | ~23 MB | 快，偏英文 |
+| `Xenova/bge-small-zh-v1.5`（**中文 locale 自动选用**） | ~23 MB | **中文对话推荐**，自动 CLS 池化 + 查询前缀 |
 | `Xenova/multilingual-e5-small` | ~120 MB | 多语言召回最强 |
 
 用 `CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING_MODEL` 切换模型。下载落在缓存目录，永久复用。
@@ -177,15 +183,15 @@ Advisor 通过 `ReadConversationLog` 工具读取主代理对话历史，支持�
 
 | 变量 | 说明 |
 |---|---|
-| `CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING_MODEL` | 本地语义模型 ID（默认 `Xenova/all-MiniLM-L6-v2`；中文用 `Xenova/bge-small-zh-v1.5`）。首次使用自动下载一次，之后离线。 |
+| `CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING_MODEL` | 本地语义模型 ID。未设置时按 locale 自动选：中文环境用 `Xenova/bge-small-zh-v1.5`，其他用 `Xenova/all-MiniLM-L6-v2`。首次使用自动下载一次，之后离线。 |
 | `CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING` | 设为 `0`/`false`/`off` 跳过模型层，改用近似兜底。 |
 | `CLAUDE_CODE_ADVISOR_SEMANTIC_SEARCH` | 设为 `0`/`false`/`off` 完全关闭语义/混合模式（忽略 mode，只用 keyword）。别名：`CLAUDE_CODE_SEMANTIC_SEARCH`。 |
 | `CLAUDE_CODE_ADVISOR_EMBEDDING_CACHE_DIR` | 覆盖模型与向量缓存目录（测试/临时 CI 用）。 |
 
-**中文对话示例：**
+**中文对话：**中文 locale 下无需任何配置，自动使用 bge-small-zh 模型：
 ```bash
-export CLAUDE_CODE_ADVISOR_LOCAL_EMBEDDING_MODEL="Xenova/bge-small-zh-v1.5"
-# 首次语义搜索自动下载 ~23MB，之后完全离线
+# 首次语义搜索自动下载 ~23MB（有进度显示），之后完全离线
+echo $LANG   # zh_CN.UTF-8 → 自动选 Xenova/bge-small-zh-v1.5
 ```
 
 #### 如何确认语义模型正常工作
@@ -227,6 +233,24 @@ JSONL 归档（按项目目录哈希分桶）。重启后、或同一项目的�
 
 归档 FIFO 上限（保留最新 4000 条），重复运行/恢复会话不会产生重复条目；持久化全程
 尽力而为 —— 磁盘故障不会影响 Advisor 本身。
+
+### 会话选择器 —— 语义补充检索
+
+`/resume`（以及 `--resume`）的会话选择器在关键词过滤之外，会用**同一个本地语义小模型**
+对候选会话做相似度评分：按标题/分支/标签搜索不到时，主题相关的会话仍会出现在结果
+末尾（最多 12 条，余弦相似度 ≥ 0.3）。完全离线、零 API 成本、纯尽力而为——
+嵌入不可用时行为与原来完全一致。会话文本向量同样走磁盘缓存，重复搜索近乎零开销。
+
+### 选中即复制 · ctrl+y 粘贴进输入框
+
+- **选中即复制**：鼠标拖选（或多击选词）松开即自动复制到系统剪贴板
+  （OSC 52 / tmux / pbcopy / wl-copy 多级回退），可用 `/config` 的
+  `copyOnSelect` 关闭。
+- **应用内剪贴板兜底**：每次复制都会同步镜像到 CC-lite 内部剪贴板——即使终端
+  不支持 OSC 52、Linux 上没有 wl-copy/xclip，复制也**永远生效**。
+- **ctrl+y 直接粘贴**：把最近一次复制的内容插入对话框光标处
+  （readline yank 惯例，SSH/tmux/任何终端都透传）。长文本自动折叠为粘贴 pill。
+  可在 `keybindings.json` 中改绑 `chat:yank`。
 
 ---
 
@@ -328,6 +352,44 @@ export CLAUDE_CODE_USE_OPENAI=1
 | `OPENAI_API_MODE` | 强制传输方式：`chat_completions` 或 `responses` |
 | `CLAUDE_CODE_ADVISOR_MODEL` | 设置 Advisor 评审模型（provider 无关） |
 | `CLAUDE_CODE_SEARXNG_BASE_URL` | 让 WebSearch 走你自己的 SearXNG 实例 |
+| `CCLITE_TURBO` | 置 `1`（或用 `--turbo` / `/turbo`）开启 turbo 高并发模式 |
+| `CCLITE_TURBO_HEDGES` | 每次请求的对冲总尝试数，含原始请求（默认 `2`，上限 `4`） |
+| `CCLITE_TURBO_HEDGE_DELAY_MS` | 相邻对冲尝试的发射间隔（默认 `8000`） |
+| `CCLITE_TURBO_ATTEMPT_TIMEOUT_MS` | 单次尝试在该时间内无任何输出则中止，竞速继续（`0` = 关闭） |
+| `CCLITE_TURBO_INCLUDE_LOCAL` | 置 `1` 时对本地服务（Ollama/LM Studio）也对冲——通常没意义，只会加倍 GPU 负载 |
+| `CCLITE_SEMANTIC_RERANK` | 置 `1` 后用本地小模型按语义相似度重排 SearXNG 搜索结果（离线、零成本） |
+
+### turbo 高并发模式（`--turbo` / `/turbo`）
+
+有的模型单请求慢但并发余量充足。turbo 模式利用这一点做**对冲请求**：同一
+个请求按 `CCLITE_TURBO_HEDGE_DELAY_MS` 的间隔最多并发发出
+`CCLITE_TURBO_HEDGES` 份，谁先吐出真实内容就用谁，其余全部中止。在慢中转上
+能显著压低首字延迟长尾——代价是被放弃的副本会多计一次输入 token。
+
+并发度是**动态**的，不是静态开关：
+
+- 内置 AIMD 调控器（类似 TCP 拥塞控制）：从配置上限起步按请求自适应——
+  持续成功缓慢回升；429/5xx 触发减半并进入冷却；本地事件循环饱和
+  （每秒采样）同样触发降档。下限是单请求，压力再大也只是优雅退化为普通
+  模式，绝不会卡死 CLI。
+- 同一配额同时约束 turbo 模式下的并行工具/子代理数量（上限 20；
+  `CLAUDE_CODE_MAX_TOOL_USE_CONCURRENCY` 设置后仍以其为准）。
+- 本地后端（Ollama/LM Studio）对重复请求毫无收益，默认跳过，除非设置
+  `CCLITE_TURBO_INCLUDE_LOCAL=1`。
+- `CCLITE_TURBO_ATTEMPT_TIMEOUT_MS` 会收割静默挂死的尝试，单条死连接永远
+  拖不垮整场竞速。
+
+用 `/turbo status` 查看实时状态（当前并发配额、实测事件循环延迟）。仅作用于
+OpenAI 兼容通道（Chat Completions 与 Responses 均可）；原生 Anthropic 通道
+不受影响。
+
+**turbo 与 bypassPermissions 可自由组合**：bypass 只改权限层，turbo 只动
+API/工具层——例如 `CCLITE_TURBO=1 cclite-bypass -p "..."` 同时生效。
+
+```bash
+cclite --turbo                     # 整个会话启用 turbo 模式
+# 或会话内随时切换：/turbo on | /turbo off | /turbo status
+```
 
 **常用示例：**
 

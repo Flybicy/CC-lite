@@ -19,6 +19,7 @@ import {
   TIER_TO_SCOPE,
   type ModelScope,
   type ModelTier,
+  type ProviderApiMode,
   type ProviderType,
 } from './providerRegistry.js'
 
@@ -33,6 +34,11 @@ export interface TierConnection {
   model: string
   /** Provider-specific extra request headers (optional). */
   headers?: Record<string, string>
+  /**
+   * OpenAI-compatible providers: per-provider endpoint-style override
+   * (chat completions vs responses). Undefined / 'auto' = heuristic.
+   */
+  apiMode?: ProviderApiMode
 }
 
 export interface TierEnvFallback {
@@ -82,5 +88,6 @@ export function resolveTierConnectionByTier(tier: ModelTier): TierResolution {
     apiKey: provider.apiKey,
     model,
     headers: provider.headers,
+    apiMode: provider.apiMode === 'auto' ? undefined : provider.apiMode,
   }
 }

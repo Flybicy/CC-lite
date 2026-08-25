@@ -79,8 +79,18 @@ export const CONFIG_UI_PAGE = `<!DOCTYPE html>
     </div>
     <label>Base URL</label><input id="f_base" placeholder="http://127.0.0.1:11434/v1">
     <label>API Key（本地服务可留空）</label><input id="f_key" type="password" placeholder="sk-…（留空表示不修改）">
-    <label>自定义请求头（可选，JSON；严格的 Anthropic 网关可配 User-Agent / x-app）</label>
-    <textarea id="f_headers" rows="3" spellcheck="false" placeholder='{"User-Agent":"claude-cli/2.0.30 (external, cli)","x-app":"cli"}'></textarea>
+    <div id="apimodeWrap">
+      <label>接口风格（OpenAI 兼容用）</label>
+      <select id="f_apimode">
+        <option value="auto">自动（默认：第三方走 chat/completions，官方 OpenAI 推理模型走 responses）</option>
+        <option value="chat_completions">强制 Chat Completions（POST {baseURL}/chat/completions）</option>
+        <option value="responses">强制 Responses（POST {baseURL}/responses，部分中转只支持这个）</option>
+      </select>
+    </div>
+    <label>自定义请求头（可选，JSON；严格的 Anthropic 网关可配 User-Agent / x-app）
+      <span class="row" style="margin:4px 0 2px"><span class="fit"><button class="ghost" id="fillHeaders" style="padding:3px 10px;font-size:12px">按类型填推荐请求头</button></span></span>
+    </label>
+    <textarea id="f_headers" rows="3" spellcheck="false" placeholder='一般留空即可；严格的 Anthropic 网关可填 {"User-Agent":"claude-cli/2.0.30 (external, cli)","x-app":"cli"}'></textarea>
     <div class="row" style="margin-top:14px">
       <div class="fit"><button id="fetchModels">拉取模型列表</button></div>
       <div class="fit"><button id="saveProv">保存提供商</button></div>
