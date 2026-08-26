@@ -2,7 +2,7 @@ import { z } from 'zod/v4'
 import { buildTool } from '../../Tool.js'
 import { describeImage } from '../../services/vision/describeImage.js'
 import { resolveVisionProvider } from '../../utils/providers/providerRegistry.js'
-import { mainModelAlreadySees } from '../../services/vision/visionCapability.js'
+import { visionAssistIsActive } from '../../services/vision/visionCapability.js'
 import { lazySchema } from '../../utils/lazySchema.js'
 import { DESCRIPTION, VIEW_IMAGE_TOOL_NAME } from './prompt.js'
 
@@ -59,10 +59,8 @@ export const ViewImageTool = buildTool({
     return true
   },
   isEnabled() {
-    // Only useful when a vision fallback is configured AND the main model
-    // can't see images itself — a vision-capable main model receiving this
-    // tool would double-pay for every screenshot.
-    return resolveVisionProvider() !== null && !mainModelAlreadySees()
+    // WebUI 档位选了“使用视觉辅助”且 vision 槽绑妥了才出现。
+    return resolveVisionProvider() !== null && visionAssistIsActive()
   },
   toAutoClassifierInput(input) {
     return input.path

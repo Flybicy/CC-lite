@@ -39,6 +39,8 @@ export interface TierConnection {
    * (chat completions vs responses). Undefined / 'auto' = heuristic.
    */
   apiMode?: ProviderApiMode
+  /** 'native' (default) or 'assist' — image routing for this tier. */
+  images?: 'native' | 'assist'
 }
 
 export interface TierEnvFallback {
@@ -90,5 +92,6 @@ export function resolveTierConnectionByTier(tier: ModelTier): TierResolution {
     model,
     headers: provider.headers,
     apiMode: provider.apiMode === 'auto' ? undefined : provider.apiMode,
+    images: resolved.images,
   }
 }

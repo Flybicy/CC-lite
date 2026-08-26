@@ -109,6 +109,10 @@ export const TierBindingSchema = z.object({
   // the (firstParty-only) capability probe, so without this they are treated
   // as 200K even when the upstream supports 1M.
   contextWindow: z.number().int().positive().optional(),
+  // How this tier consumes images: 'native' (default) sends image payloads
+  // straight to the bound model; 'assist' routes them through the vision
+  // provider below (ViewImage tool) — for text-only models.
+  images: z.enum(['native', 'assist']).optional(),
 })
 
 /** Legacy alias — v1 called these "routing entries". */
@@ -119,10 +123,6 @@ export const TierMapSchema = z
     pro: TierBindingSchema.optional(),
     plus: TierBindingSchema.optional(),
     se: TierBindingSchema.optional(),
-    // Not a call tier: the image-generation slot (/image command). Kept in
-    // the same map so one file configures everything; image providers are
-    // ordinary entries with an OpenAI-compatible /images/generations route.
-    image: TierBindingSchema.optional(),
     // Not a call tier: vision fallback. When the main-loop model is
     // text-only, ViewImage routes image understanding here so the model
     // still gets "eyes".
@@ -158,6 +158,8 @@ export interface ResolvedTierProvider {
   model: string
   /** Optional explicit context window (tokens) from the tier binding. */
   contextWindow?: number
+  /** 'native' (default) or 'assist' — image routing for this tier. */
+  images?: 'native' | 'assist'
 }
 
 /** Legacy alias — same shape, `scope` was the primary key in v1. */
@@ -272,13 +274,10 @@ export function resolveTierProvider(
   if (!binding) return null
   const provider = cfg.providers.find(p => p.id === binding.providerId)
   if (!provider) return null
-  return { tier, scope: TIER_TO_SCOPE[tier], provider, model: binding.model, contextWindow: binding.contextWindow }
+  return { tier, scope: TIER_TO_SCOPE[tier], provider, model: binding.model, contextWindow: binding.contextWindow, images: binding.images ?? undefined }
 }
 
-/**
- * Resolve the configured image-generation provider (/image command), or
- * null when the user has not bound one ("image" tier in providers.json).
- */
+/** Resolved aux-slot binding (vision provider). */
 export interface ResolvedImageProvider {
   provider: ProviderEntry
   model: string
@@ -295,15 +294,6 @@ export function resolveVisionProvider(
   return { provider, model: binding.model }
 }
 
-export function resolveImageProvider(
-  cfg: ProviderConfig = loadProviderConfig(),
-): ResolvedImageProvider | null {
-  const binding = cfg.tiers?.image
-  if (!binding) return null
-  const provider = cfg.providers.find(p => p.id === binding.providerId)
-  if (!provider) return null
-  return { provider, model: binding.model }
-}
 
 /** Legacy entry point: resolve by scope name instead of tier codename. */
 export function resolveScopeProvider(

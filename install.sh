@@ -460,21 +460,16 @@ install_binary() {
   add_to_path
 }
 
-# Linux desktops: mouse-select copy and /copy write the system clipboard via
-# a native tool (OSC 52 is unsupported by GNOME Terminal and friends). Install
-# wl-copy (Wayland) or xclip (X11) best-effort; without one, copying falls
-# back to "written to /tmp" only.
+# Linux desktops: copying to the system clipboard needs a native helper
+# (OSC 52 is unsupported by GNOME Terminal and friends). We intentionally
+# do NOT auto-install one — sudo prompts have no TTY here and the temp-file
+# fallback is fine; tell the user once and move on.
 check_clipboard() {
   [ "$OS" = "linux" ] || return 0
   if command -v wl-copy &>/dev/null || command -v xclip &>/dev/null || command -v xsel &>/dev/null; then
     ok "clipboard helper present"
-    return 0
-  fi
-  info "No clipboard helper found (wl-copy/xclip/xsel). Installing..."
-  if [ "${XDG_SESSION_TYPE:-}" = "wayland" ]; then
-    pkg_install wl-clipboard || warn "Copy to clipboard will still fall back to a temp file; install wl-clipboard manually for full support."
   else
-    pkg_install xclip || warn "Copy to clipboard will still fall back to a temp file; install xclip manually for full support."
+    info "剪贴板助手未安装（wl-copy/xclip/xsel）——复制功能会退化为写临时文件，需要系统剪贴板可自行安装。"
   fi
 }
 # -------------------------------------------------------------------

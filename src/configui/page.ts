@@ -65,7 +65,7 @@ export const CONFIG_UI_PAGE = `<!DOCTYPE html>
   </div>
 
   <h2>辅助能力</h2>
-  <p class="sub" style="margin-top:-6px">作图与视觉是<b>两个不同能力</b>：生图模型（如商汤 u1.5）只出图、看不了图；视觉模型（如 GPT-4o）负责看图。两条槽互不影响，请分别绑定——纯文本主模型会把视觉位当“眼睛”。</p>
+  <p class="sub" style="margin-top:-6px">给<b>纯文本</b>主模型配一个带图片输入能力的视觉模型；三档里把谁的图片处理切换到“使用视觉辅助”，它的图就由这里走。要画图？直接复制提供商的文档给 AI 装对应插件就行，客户端不内置。</p>
   <div class="card"><div id="auxTiers"></div></div>
 
   <h2>提供商（可保存多个）</h2>
@@ -114,8 +114,7 @@ const CALL_TIERS = [
 // 只支持 /images/generations 生成，没有图片理解能力；反过来 GPT-4o 类
 // 模型能看图但不一定能画图。两者在 UI 和配置里必须分开绑。
 const AUX_TIERS = [
-  { key:'image',  name:'作图',  desc:'仅生成图片 · /image 与 GenerateImage 工具使用；提供商需支持 /images/generations（如商汤 sensenova-u1.5-lite）' },
-  { key:'vision', name:'视觉辅助', desc:'仅理解图片 · 主模型为纯文本时的“眼睛”（ViewImage 工具）；需支持图片输入，不要绑纯生图模型' }
+  { key:'vision', name:'视觉辅助', desc:'为纯文本主模型配置视觉辅助——需要支持图片输入的多模态模型。三档任一选“使用视觉辅助”后，图片会交给它解析（ViewImage 工具）' }
 ]
 const TIERS = CALL_TIERS.concat(AUX_TIERS)
 var CFG = { providers:[], tiers:{} }
@@ -198,7 +197,8 @@ function renderTierGroup(tiers){
       + '<div><label>提供商</label><select id="tier_prov_'+t.key+'" data-tier="'+t.key+'">'+provOpts+'</select></div>'
       + '<div><label>模型</label><input id="tier_model_'+t.key+'" list="list_'+t.key+'" placeholder="模型名，如 gpt-4o / deepseek-chat" value="'+(b ? esc(b.model) : '')+'">'
       + '<datalist id="list_'+t.key+'">'+modelOptionsFor(b ? b.providerId : '')+'</datalist></div>'
-      + (t.key === 'image' || t.key === 'vision' ? '' : '<div><label>上下文窗口（token，留空=200K）</label><input id="tier_ctx_'+t.key+'" type="number" min="1" step="1000" placeholder="200000 / 1000000" value="'+(b && b.contextWindow ? b.contextWindow : '')+'"></div>')
+      + (t.key === 'vision' ? '' : '<div><label>图片处理</label><select id="tier_img_' + t.key + '"><option value="native"' + ((b && (b.images||'native')==='native') ? ' selected' : '') + '>处理原图（模型自带视觉）</option><option value="assist"' + (b && b.images==='assist' ? ' selected' : '') + '>使用视觉辅助模型</option></select></div>')
+      + (t.key === 'vision' ? '' : '<div><label>上下文窗口（token，留空=200K）</label><input id="tier_ctx_'+t.key+'" type="number" min="1" step="1000" placeholder="200000 / 1000000" value="'+(b && b.contextWindow ? b.contextWindow : '')+'"></div>')
       + '</div>'
   }).join('')
 }
@@ -302,11 +302,12 @@ async function saveTiers(){
     const pid = \$('tier_prov_'+t.key).value
     const model = \$('tier_model_'+t.key).value.trim()
     if (pid && !model){ toast(t.key + ' 选了提供商，请填模型名','err'); return }
-    const isAux = (t.key === 'image' || t.key === 'vision')
+    const isAux = (t.key === 'vision')
     const ctxRaw = isAux ? '' : \$('tier_ctx_'+t.key).value.trim()
+    const imgMode = isAux ? undefined : \$('tier_img_'+t.key).value
     const ctx = ctxRaw ? parseInt(ctxRaw, 10) : NaN
     if (ctxRaw && (!Number.isInteger(ctx) || ctx <= 0)){ toast(t.key + ' 上下文窗口必须是正整数（token 数）','err'); return }
-    body[t.key] = pid ? { providerId:pid, model:model, ...(ctxRaw ? { contextWindow: ctx } : {}) } : null
+    body[t.key] = pid ? { providerId:pid, model:model, ...(ctxRaw ? { contextWindow: ctx } : {}), ...(imgMode ? { images: imgMode } : {}) } : null
   }
   try{ await api('/api/tiers','PUT',body); await reload(); toast('三档已保存，下一次请求即生效','ok') }
   catch(e){ toast('保存失败: '+e.message,'err') }

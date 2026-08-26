@@ -26,7 +26,7 @@ import {
 } from '../utils/providers/providerRegistry.js'
 
 // Aux slots（作图 / 视觉辅助）与三档同等持久化；删除提供商时也一起清绑。
-const TIER_KEYS = [...MODEL_TIERS, 'image', 'vision'] as const
+const TIER_KEYS = [...MODEL_TIERS, 'vision'] as const
 import { CONFIG_UI_PAGE } from './page.js'
 
 const HOST = '127.0.0.1'
@@ -318,10 +318,13 @@ async function handleRequestInner(
           }
           contextWindow = n
         }
+        const imagesRaw = (value as Record<string, unknown>).images
+        const images = imagesRaw === 'assist' ? 'assist' : imagesRaw === 'native' ? 'native' : undefined
         cfg.tiers[tier] = {
           providerId: providerId.trim(),
           model: model.trim(),
           ...(contextWindow !== undefined ? { contextWindow } : {}),
+          ...(images !== undefined ? { images } : {}),
         }
       }
       saveProviderConfig(cfg)
