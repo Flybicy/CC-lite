@@ -33,7 +33,9 @@ export const CONFIG_UI_PAGE = `<!DOCTYPE html>
   .tag { font-size:11px; padding:2px 8px; border-radius:999px; border:1px solid var(--line); color:var(--dim); }
   .tag.openai { color:#7fd0a0; border-color:#2c4a38; }
   .tag.anthropic { color:#e2a86b; border-color:#4a3a28; }
-  .tier-card { display:grid; grid-template-columns:130px 1fr 1fr 160px; gap:10px; align-items:end; margin-bottom:10px; }
+  .tier-card { display:grid; grid-template-columns:130px 160px 1fr 180px 96px; gap:8px; align-items:end; margin-bottom:10px; }
+  .tier-card label { margin:0 0 4px }
+  .tier-card input[type=number] { padding:6px 8px }
   .tier-name { padding-bottom:9px; font-weight:600; }
   .tier-code { color:var(--accent); font-family:ui-monospace,Menlo,Consolas,monospace; }
   .tier-desc { color:var(--dim); font-weight:400; font-size:12px; display:block; }
@@ -305,8 +307,8 @@ async function saveTiers(){
     const isAux = (t.key === 'vision')
     const ctxRaw = isAux ? '' : \$('tier_ctx_'+t.key).value.trim()
     const imgMode = isAux ? undefined : \$('tier_img_'+t.key).value
-    const ctx = ctxRaw ? parseInt(ctxRaw, 10) : NaN
-    if (ctxRaw && (!Number.isInteger(ctx) || ctx <= 0)){ toast(t.key + ' 上下文窗口必须是正整数（token 数）','err'); return }
+    const ctx = ctxRaw ? parseInt(ctxRaw, 10) * 1000 : NaN
+    if (ctxRaw && (!Number.isInteger(ctx) || ctx <= 0)){ toast(t.key + ' 上下文窗口必须是正整数（单位：K，200 = 200K tokens）','err'); return }
     body[t.key] = pid ? { providerId:pid, model:model, ...(ctxRaw ? { contextWindow: ctx } : {}), ...(imgMode ? { images: imgMode } : {}) } : null
   }
   try{ await api('/api/tiers','PUT',body); await reload(); toast('三档已保存，下一次请求即生效','ok') }
