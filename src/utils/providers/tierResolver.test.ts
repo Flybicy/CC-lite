@@ -159,3 +159,21 @@ describe('tier contextWindow', () => {
     expect(getContextWindowForModel('m1', [], 'main')).toBe(1_000_000)
   })
 })
+
+describe('case-insensitive tier lookup', () => {
+  it('uppercase /model PLUS hits the same binding as plus', () => {
+    saveProviderConfig(CFG)
+    const l = resolveTierConnectionByTier('pro')
+    const u = resolveTierConnectionByTier('PRO' as 'pro')
+    expect(l.source).toBe('routing')
+    expect(u.source).toBe(l.source)
+    if (u.source !== 'routing') return
+    expect(u.baseURL).toBe('https://api.deepseek.com/v1')
+    expect(u.model).toBe('deepseek-chat')
+  })
+
+  it('mixed-case + whitespace also resolves', () => {
+    saveProviderConfig(CFG)
+    expect(resolveTierConnectionByTier('  Pro  ' as 'pro').source).toBe('routing')
+  })
+})
