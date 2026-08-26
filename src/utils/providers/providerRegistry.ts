@@ -267,7 +267,8 @@ export function resolveTierProvider(
   tier: ModelTier,
   cfg: ProviderConfig = loadProviderConfig(),
 ): ResolvedTierProvider | null {
-  const binding = cfg.tiers?.[tier]
+  // '/model PLUS' etc. — normalize free-form input to the lowercase row.
+  const binding = cfg.tiers?.[tier.trim().toLowerCase() as ModelTier]
   if (!binding) return null
   const provider = cfg.providers.find(p => p.id === binding.providerId)
   if (!provider) return null

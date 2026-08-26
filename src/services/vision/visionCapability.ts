@@ -31,7 +31,7 @@ export function modelNameSuggestsVision(model: string): boolean {
  * "does the main model already see" half.)
  */
 export function mainModelAlreadySees(tier: 'pro' | 'plus' | 'se' = 'pro'): boolean {
-  const conn = resolveTierConnectionByTier(tier)
+  const conn = resolveTierConnectionByTier(tier.trim().toLowerCase() as typeof tier)
   if (conn.source !== 'routing') {
     // env fallback (e.g. direct ANTHROPIC_API_KEY): Anthropic models see.
     return true

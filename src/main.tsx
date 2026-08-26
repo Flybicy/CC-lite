@@ -3571,6 +3571,7 @@ async function run(): Promise<CommanderCommand> {
   const runConfigWebUI = async (opts: {
     port?: string;
     open?: boolean;
+    lan?: boolean;
   }) => {
     const {
       startConfigServer
@@ -3588,7 +3589,7 @@ async function run(): Promise<CommanderCommand> {
     }
     let server;
     try {
-      server = await startConfigServer(explicitPort);
+      server = await startConfigServer(explicitPort, { lan: opts.lan });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error('Could not start the config WebUI: ' + message);
@@ -3600,6 +3601,10 @@ async function run(): Promise<CommanderCommand> {
       console.log('Port ' + server.fellBackFromPort + ' was busy — using ' + server.port + ' instead.');
     }
     console.log('CC-lite 配置页面已就绪： ' + server.url);
+    if (opts.lan) {
+      console.log('局域网模式：同一 Wi-Fi/路由器下用 http://<本机IP>:' + server.port + ' 访问。');
+      console.log('注意：该模式无鉴权，请勿在不可信网络中使用；去掉 --lan 或设 CCLITE_WEB_LAN=0 即恢复仅本机。');
+    }
     console.log('Register providers and bind the pro / plus / se models here. Saves to ~/.claude/providers.json and applies on the next request — no restart needed.');
     console.log('Press Ctrl+C to stop.');
     // Headless boxes (ssh, containers, WSL without a bridge) have no browser:
@@ -3620,14 +3625,16 @@ async function run(): Promise<CommanderCommand> {
   };
 
   program.command('web')
-    .description('Open the local WebUI (http://127.0.0.1:1511) to configure providers and the pro/plus/se models')
+    .description('Open the local WebUI (http://127.0.0.1:1511, LAN with --lan) to configure providers and the pro/plus/se models')
     .option('--port <number>', 'Port to listen on (default 1511, or CCLITE_CONFIG_PORT)')
+    .option('--lan', 'Bind 0.0.0.0 so LAN devices can open the page (no auth; trusted networks only)')
     .option('--no-open', 'Do not open the browser automatically')
     .action(runConfigWebUI);
   // Back-compat alias; the new canonical name is `ccliteweb` (see install.sh).
   program.command('config')
     .description('Alias of `cclite web` — kept for back-compat')
     .option('--port <number>', 'Port to listen on (default 1511, or CCLITE_CONFIG_PORT)')
+    .option('--lan', 'Bind 0.0.0.0 so LAN devices can open the page (no auth; trusted networks only)')
     .option('--no-open', 'Do not open the browser automatically')
     .action(runConfigWebUI);
 

@@ -31,6 +31,16 @@ import { CONFIG_UI_PAGE } from './page.js'
 
 const HOST = '127.0.0.1'
 
+/**
+ * --lan / CCLITE_WEB_LAN: bind all interfaces and relax the Host/Origin
+ * guards so headless boxes (ssh, LAN dev boards) can be configured from
+ * another device's browser. Off by default: providers.json carries
+ * plaintext API keys.
+ */
+function lanEnabled(): boolean {
+  return process.env.CCLITE_WEB_LAN === '1' || process.env.CCLITE_WEB_LAN === 'true'
+}
+
 /** Default port, and the window scanned when it is already taken. */
 export const DEFAULT_CONFIG_PORT = 1511
 const PORT_SCAN_ATTEMPTS = 20
@@ -141,7 +151,12 @@ async function fetchProviderModels(provider: ProviderEntry): Promise<string[]> {
 export async function handleRequest(
   req: IncomingMessage,
   res: ServerResponse,
+  opts?: { lan?: boolean },
 ): Promise<void> {
+  const lan = opts?.lan ?? lanEnabled()
+  if (lan) {
+    return handleRequestInner(req, res)
+  }
   const hostHeader = req.headers.host
   if (!isAllowedHost(hostHeader) || !isAllowedOrigin(req.headers.origin)) {
     json(res, 403, {
@@ -149,6 +164,13 @@ export async function handleRequest(
     })
     return
   }
+  return handleRequestInner(req, res)
+}
+
+async function handleRequestInner(
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
   const url = new URL(req.url ?? '/', `http://${HOST}`)
   const path = url.pathname
   try {
@@ -370,6 +392,7 @@ export function resolvePreferredPort(explicit?: number): number {
 function listenOnce(
   server: ReturnType<typeof createServer>,
   port: number,
+  host: string = HOST,
 ): Promise<void> {
   return new Promise<void>((resolve, reject) => {
     const onError = (err: Error) => {
@@ -382,7 +405,7 @@ function listenOnce(
     }
     server.once('error', onError)
     server.once('listening', onListening)
-    server.listen(port, HOST)
+    server.listen(port, host)
   })
 }
 
@@ -395,8 +418,11 @@ function listenOnce(
  */
 export async function startConfigServer(
   preferredPort?: number,
+  opts?: { lan?: boolean },
 ): Promise<ConfigServer> {
   const first = preferredPort === 0 ? 0 : resolvePreferredPort(preferredPort)
+  const lan = opts?.lan ?? lanEnabled()
+  const host = lan ? '0.0.0.0' : HOST
   const server = createServer((req, res) => {
     void handleRequest(req, res).catch(err => {
       try {
@@ -412,7 +438,7 @@ export async function startConfigServer(
   let bound = false
   for (let i = 0; i < attempts; i++) {
     try {
-      await listenOnce(server, first === 0 ? 0 : first + i)
+      await listenOnce(server, first === 0 ? 0 : first + i, host)
       bound = true
       break
     } catch (err) {
@@ -434,7 +460,9 @@ export async function startConfigServer(
   resetProviderConfigCacheForTests()
   return {
     port: actualPort,
-    url: `http://${HOST}:${actualPort}`,
+    // Show the loopback form even in LAN mode (0.0.0.0 is not dialable);
+    // the CLI prints the LAN hint separately.
+    url: `http://${host === '0.0.0.0' ? HOST : host}:${actualPort}`,
     ...(first !== 0 && actualPort !== first ? { fellBackFromPort: first } : {}),
     close: () =>
       new Promise<void>((resolve, reject) =>

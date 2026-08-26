@@ -75,8 +75,9 @@ export function tierNeeds1mBetaHeader(tier: ModelTier): boolean {
 
 /** Resolve connection details for an explicit tier. */
 export function resolveTierConnectionByTier(tier: ModelTier): TierResolution {
-  const resolved = resolveTierProvider(tier)
-  const scope = TIER_TO_SCOPE[tier]
+  const normalized = tier.trim().toLowerCase() as ModelTier
+  const resolved = resolveTierProvider(normalized)
+  const scope = TIER_TO_SCOPE[normalized]
   if (!resolved) return { source: 'env', tier, scope }
   const { provider, model } = resolved
   return {
