@@ -54,7 +54,7 @@ export const CONFIG_UI_PAGE = `<!DOCTYPE html>
   <p class="sub">本页面仅在 <b>127.0.0.1</b> 本机监听，所有配置保存在本地 <code id="cfgpath">~/.claude/providers.json</code>。
   保存后<b>下一次请求立即生效</b>，无需重启 cclite。</p>
 
-  <h2>模型档位（调用代号 <span class="tier-code">pro</span> / <span class="tier-code">plus</span> / <span class="tier-code">se</span>，另含作图 / 视觉辅助位）</h2>
+  <h2>对话档位（调用代号 <span class="tier-code">pro</span> / <span class="tier-code">plus</span> / <span class="tier-code">se</span>）</h2>
   <p class="sub" style="margin-top:-6px">请求失败（超时 / 5xx / 429）时自动顺位降级 <b>pro → plus → se</b>，成功后下一轮自动换回高挡（最多自动降级 5 次）；余额不足 / 额度用尽会直接换到低档且<b>不再切回</b>，充值后用 <code>/model</code> 手动切换。也可在对话里用 <code>/model pro</code> / <code>/model plus</code> / <code>/model se</code> 随时手动指定。</p>
   <div class="card">
     <div id="tiers"></div>
@@ -63,6 +63,10 @@ export const CONFIG_UI_PAGE = `<!DOCTYPE html>
       <div class="fit"><span class="hint">留空 = 该档回退到环境变量 / 内置默认</span></div>
     </div>
   </div>
+
+  <h2>辅助能力</h2>
+  <p class="sub" style="margin-top:-6px">作图与视觉是<b>两个不同能力</b>：生图模型（如商汤 u1.5）只出图、看不了图；视觉模型（如 GPT-4o）负责看图。两条槽互不影响，请分别绑定——纯文本主模型会把视觉位当“眼睛”。</p>
+  <div class="card"><div id="auxTiers"></div></div>
 
   <h2>提供商（可保存多个）</h2>
   <div id="providers"></div>
@@ -101,13 +105,19 @@ export const CONFIG_UI_PAGE = `<!DOCTYPE html>
 </div>
 <div class="toast" id="toast"></div>
 <script>
-const TIERS = [
+const CALL_TIERS = [
   { key:'pro',  name:'pro',  desc:'主档位 · 默认主循环；请求失败自动降级到 plus' },
   { key:'plus', name:'plus', desc:'第二档 · pro 失败时的顺位目标，完成一轮后换回 pro' },
-  { key:'se',   name:'se',   desc:'兜底档 · plus 失败时的顺位目标，不再自动降级' },
-  { key:'image',  name:'image',  desc:'作图模型 · /image 命令使用；提供商需支持 /images/generations（OpenAI 兼容）' },
-  { key:'vision', name:'vision', desc:'视觉模型 · 给纯文本主模型当“眼睛”（ViewImage 工具）；需支持图片输入' }
+  { key:'se',   name:'se',   desc:'兜底档 · plus 失败时的顺位目标，不再自动降级' }
 ]
+// 辅助能力槽位：与对话档位分开。作图 ≠ 视觉——很多提供商（如商汤 u1）
+// 只支持 /images/generations 生成，没有图片理解能力；反过来 GPT-4o 类
+// 模型能看图但不一定能画图。两者在 UI 和配置里必须分开绑。
+const AUX_TIERS = [
+  { key:'image',  name:'作图',  desc:'仅生成图片 · /image 与 GenerateImage 工具使用；提供商需支持 /images/generations（如商汤 sensenova-u1.5-lite）' },
+  { key:'vision', name:'视觉辅助', desc:'仅理解图片 · 主模型为纯文本时的“眼睛”（ViewImage 工具）；需支持图片输入，不要绑纯生图模型' }
+]
+const TIERS = CALL_TIERS.concat(AUX_TIERS)
 var CFG = { providers:[], tiers:{} }
 
 function \$(id){ return document.getElementById(id) }
@@ -176,8 +186,8 @@ function modelOptionsFor(providerId){
   return models.map(function(m){ return '<option value="'+esc(m)+'">' }).join('')
 }
 
-function renderTiers(){
-  \$('tiers').innerHTML = TIERS.map(function(t){
+function renderTierGroup(tiers){
+  return tiers.map(function(t){
     const b = CFG.tiers[t.key] || null
     const provOpts = ['<option value="">（不指定 · 回退环境默认）</option>'].concat(
       CFG.providers.map(function(p){
@@ -191,6 +201,11 @@ function renderTiers(){
       + (t.key === 'image' || t.key === 'vision' ? '' : '<div><label>上下文窗口（token，留空=200K）</label><input id="tier_ctx_'+t.key+'" type="number" min="1" step="1000" placeholder="200000 / 1000000" value="'+(b && b.contextWindow ? b.contextWindow : '')+'"></div>')
       + '</div>'
   }).join('')
+}
+
+function renderTiers(){
+  \$('tiers').innerHTML = renderTierGroup(CALL_TIERS)
+  \$('auxTiers').innerHTML = renderTierGroup(AUX_TIERS)
   // Keep the model datalist in sync with the selected provider, and clear a
   // stale model name when it does not belong to the newly picked provider.
   TIERS.forEach(function(t){

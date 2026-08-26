@@ -20,11 +20,13 @@ import {
   resetProviderConfigCacheForTests,
   saveProviderConfig,
   MODEL_TIERS,
-  isModelTier,
   type ModelTier,
   type ProviderConfig,
   type ProviderEntry,
 } from '../utils/providers/providerRegistry.js'
+
+// Aux slots（作图 / 视觉辅助）与三档同等持久化；删除提供商时也一起清绑。
+const TIER_KEYS = [...MODEL_TIERS, 'image', 'vision'] as const
 import { CONFIG_UI_PAGE } from './page.js'
 
 const HOST = '127.0.0.1'
@@ -249,7 +251,7 @@ export async function handleRequest(
       cfg.providers = cfg.providers.filter(p => p.id !== id)
       if (cfg.providers.length === before) throw new Error(`provider "${id}" not found`)
       // Drop tier bindings pointing at the deleted provider.
-      for (const tier of MODEL_TIERS) {
+      for (const tier of TIER_KEYS) {
         if (cfg.tiers[tier]?.providerId === id) delete cfg.tiers[tier]
       }
       saveProviderConfig(cfg)
@@ -261,9 +263,9 @@ export async function handleRequest(
       const body = (await readJsonBody(req)) as Record<string, unknown>
       const cfg = loadProviderConfig()
       for (const key of Object.keys(body)) {
-        if (!isModelTier(key)) throw new Error(`unknown tier "${key}"`)
+        if (!(TIER_KEYS as readonly string[]).includes(key)) throw new Error(`unknown tier "${key}"`)
       }
-      for (const tier of MODEL_TIERS) {
+      for (const tier of TIER_KEYS) {
         const value = body[tier]
         if (value === null || value === undefined) {
           delete cfg.tiers[tier]
