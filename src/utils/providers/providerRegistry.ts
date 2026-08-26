@@ -119,6 +119,14 @@ export const TierMapSchema = z
     pro: TierBindingSchema.optional(),
     plus: TierBindingSchema.optional(),
     se: TierBindingSchema.optional(),
+    // Not a call tier: the image-generation slot (/image command). Kept in
+    // the same map so one file configures everything; image providers are
+    // ordinary entries with an OpenAI-compatible /images/generations route.
+    image: TierBindingSchema.optional(),
+    // Not a call tier: vision fallback. When the main-loop model is
+    // text-only, ViewImage routes image understanding here so the model
+    // still gets "eyes".
+    vision: TierBindingSchema.optional(),
   })
   .default({})
 
@@ -264,6 +272,36 @@ export function resolveTierProvider(
   const provider = cfg.providers.find(p => p.id === binding.providerId)
   if (!provider) return null
   return { tier, scope: TIER_TO_SCOPE[tier], provider, model: binding.model, contextWindow: binding.contextWindow }
+}
+
+/**
+ * Resolve the configured image-generation provider (/image command), or
+ * null when the user has not bound one ("image" tier in providers.json).
+ */
+export interface ResolvedImageProvider {
+  provider: ProviderEntry
+  model: string
+}
+
+/** Resolve the vision fallback provider, or null when unbound. */
+export function resolveVisionProvider(
+  cfg: ProviderConfig = loadProviderConfig(),
+): ResolvedImageProvider | null {
+  const binding = cfg.tiers?.vision
+  if (!binding) return null
+  const provider = cfg.providers.find(p => p.id === binding.providerId)
+  if (!provider) return null
+  return { provider, model: binding.model }
+}
+
+export function resolveImageProvider(
+  cfg: ProviderConfig = loadProviderConfig(),
+): ResolvedImageProvider | null {
+  const binding = cfg.tiers?.image
+  if (!binding) return null
+  const provider = cfg.providers.find(p => p.id === binding.providerId)
+  if (!provider) return null
+  return { provider, model: binding.model }
 }
 
 /** Legacy entry point: resolve by scope name instead of tier codename. */

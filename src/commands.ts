@@ -151,6 +151,7 @@ import env from './commands/env/index.js'
 import exit from './commands/exit/index.js'
 import exportCommand from './commands/export/index.js'
 import turbo from './commands/turbo/index.js'
+import image from './commands/image/index.js'
 import model from './commands/model/index.js'
 import tag from './commands/tag/index.js'
 import outputStyle from './commands/output-style/index.js'
@@ -245,6 +246,7 @@ const COMMANDS = memoize((): Command[] => [
   effort,
   exit,
   turbo,
+  image,
   files,
   heapDump,
   help,

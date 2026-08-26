@@ -54,7 +54,7 @@ export const CONFIG_UI_PAGE = `<!DOCTYPE html>
   <p class="sub">本页面仅在 <b>127.0.0.1</b> 本机监听，所有配置保存在本地 <code id="cfgpath">~/.claude/providers.json</code>。
   保存后<b>下一次请求立即生效</b>，无需重启 cclite。</p>
 
-  <h2>三档模型（调用代号 <span class="tier-code">pro</span> / <span class="tier-code">plus</span> / <span class="tier-code">se</span>）</h2>
+  <h2>模型档位（调用代号 <span class="tier-code">pro</span> / <span class="tier-code">plus</span> / <span class="tier-code">se</span>，另含作图 / 视觉辅助位）</h2>
   <p class="sub" style="margin-top:-6px">请求失败（超时 / 5xx / 429）时自动顺位降级 <b>pro → plus → se</b>，成功后下一轮自动换回高挡（最多自动降级 5 次）；余额不足 / 额度用尽会直接换到低档且<b>不再切回</b>，充值后用 <code>/model</code> 手动切换。也可在对话里用 <code>/model pro</code> / <code>/model plus</code> / <code>/model se</code> 随时手动指定。</p>
   <div class="card">
     <div id="tiers"></div>
@@ -104,7 +104,9 @@ export const CONFIG_UI_PAGE = `<!DOCTYPE html>
 const TIERS = [
   { key:'pro',  name:'pro',  desc:'主档位 · 默认主循环；请求失败自动降级到 plus' },
   { key:'plus', name:'plus', desc:'第二档 · pro 失败时的顺位目标，完成一轮后换回 pro' },
-  { key:'se',   name:'se',   desc:'兜底档 · plus 失败时的顺位目标，不再自动降级' }
+  { key:'se',   name:'se',   desc:'兜底档 · plus 失败时的顺位目标，不再自动降级' },
+  { key:'image',  name:'image',  desc:'作图模型 · /image 命令使用；提供商需支持 /images/generations（OpenAI 兼容）' },
+  { key:'vision', name:'vision', desc:'视觉模型 · 给纯文本主模型当“眼睛”（ViewImage 工具）；需支持图片输入' }
 ]
 var CFG = { providers:[], tiers:{} }
 
@@ -186,7 +188,7 @@ function renderTiers(){
       + '<div><label>提供商</label><select id="tier_prov_'+t.key+'" data-tier="'+t.key+'">'+provOpts+'</select></div>'
       + '<div><label>模型</label><input id="tier_model_'+t.key+'" list="list_'+t.key+'" placeholder="模型名，如 gpt-4o / deepseek-chat" value="'+(b ? esc(b.model) : '')+'">'
       + '<datalist id="list_'+t.key+'">'+modelOptionsFor(b ? b.providerId : '')+'</datalist></div>'
-      + '<div><label>上下文窗口（token，留空=200K）</label><input id="tier_ctx_'+t.key+'" type="number" min="1" step="1000" placeholder="200000 / 1000000" value="'+(b && b.contextWindow ? b.contextWindow : '')+'"></div>'
+      + (t.key === 'image' || t.key === 'vision' ? '' : '<div><label>上下文窗口（token，留空=200K）</label><input id="tier_ctx_'+t.key+'" type="number" min="1" step="1000" placeholder="200000 / 1000000" value="'+(b && b.contextWindow ? b.contextWindow : '')+'"></div>')
       + '</div>'
   }).join('')
   // Keep the model datalist in sync with the selected provider, and clear a
@@ -285,7 +287,8 @@ async function saveTiers(){
     const pid = \$('tier_prov_'+t.key).value
     const model = \$('tier_model_'+t.key).value.trim()
     if (pid && !model){ toast(t.key + ' 选了提供商，请填模型名','err'); return }
-    const ctxRaw = \$('tier_ctx_'+t.key).value.trim()
+    const isAux = (t.key === 'image' || t.key === 'vision')
+    const ctxRaw = isAux ? '' : \$('tier_ctx_'+t.key).value.trim()
     const ctx = ctxRaw ? parseInt(ctxRaw, 10) : NaN
     if (ctxRaw && (!Number.isInteger(ctx) || ctx <= 0)){ toast(t.key + ' 上下文窗口必须是正整数（token 数）','err'); return }
     body[t.key] = pid ? { providerId:pid, model:model, ...(ctxRaw ? { contextWindow: ctx } : {}) } : null

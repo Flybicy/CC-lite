@@ -1,6 +1,8 @@
 // biome-ignore-all assist/source/organizeImports: ANT-ONLY import markers must not be reordered
 import { toolMatchesName, type Tool, type Tools } from './Tool.js'
 import { AdvisorTool } from './tools/AdvisorTool/AdvisorTool.js'
+import { ViewImageTool } from './tools/ViewImageTool/ViewImageTool.js'
+import { GenerateImageTool } from './tools/GenerateImageTool/GenerateImageTool.js'
 import { AgentTool } from './tools/AgentTool/AgentTool.js'
 import { SkillTool } from './tools/SkillTool/SkillTool.js'
 import { BashTool } from './tools/BashTool/BashTool.js'
@@ -208,6 +210,8 @@ export function getAllBaseTools(): Tools {
     WebSearchTool,
     TaskStopTool,
     AskUserQuestionTool,
+    ViewImageTool,
+    GenerateImageTool,
     SkillTool,
     EnterPlanModeTool,
     ...(process.env.USER_TYPE === 'ant' ? [ConfigTool] : []),
