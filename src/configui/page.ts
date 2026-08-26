@@ -198,7 +198,7 @@ function renderTierGroup(tiers){
       + '<div><label>模型</label><input id="tier_model_'+t.key+'" list="list_'+t.key+'" placeholder="模型名，如 gpt-4o / deepseek-chat" value="'+(b ? esc(b.model) : '')+'">'
       + '<datalist id="list_'+t.key+'">'+modelOptionsFor(b ? b.providerId : '')+'</datalist></div>'
       + (t.key === 'vision' ? '' : '<div><label>图片处理</label><select id="tier_img_' + t.key + '"><option value="native"' + ((b && (b.images||'native')==='native') ? ' selected' : '') + '>处理原图（模型自带视觉）</option><option value="assist"' + (b && b.images==='assist' ? ' selected' : '') + '>使用视觉辅助模型</option></select></div>')
-      + (t.key === 'vision' ? '' : '<div><label>上下文窗口（token，留空=200K）</label><input id="tier_ctx_'+t.key+'" type="number" min="1" step="1000" placeholder="200000 / 1000000" value="'+(b && b.contextWindow ? b.contextWindow : '')+'"></div>')
+      + (t.key === 'vision' ? '' : '<div><label>上下文（K，留空=200）</label><input id="tier_ctx_'+t.key+'" type="number" min="1" step="1" placeholder="200 / 1000" value="'+(b && b.contextWindow ? Math.round(b.contextWindow/1000) : '')+'"></div>')
       + '</div>'
   }).join('')
 }

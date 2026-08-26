@@ -1096,6 +1096,14 @@ async function* queryLoop(
               chainExtras.ccLiteTierCurrent = switchedTo
             }
             currentModel = switchedTo
+            // Keep the UI (bottom status bar) in sync with the auto-fallback:
+            // without this it still shows the old tier after the yellow
+            // warning claims the switch happened.
+            state.toolUseContext.setAppState(prev => ({
+              ...prev,
+              mainLoopModel: switchedTo,
+              mainLoopModelForSession: switchedTo,
+            }))
             // Recompute the next hop from the tier we just landed on. This is
             // what lets the chain advance past a duplicate-provider binding
             // within one turn (pro→plus→se when pro/plus share a provider):

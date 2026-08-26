@@ -46,7 +46,8 @@ import {
   getRateLimitErrorMessage,
   type OverageDisabledReason,
 } from '../claudeAiLimits.js'
-import { shouldProcessRateLimits } from '../rateLimitMocking.js' // Used for /mock-limits command
+import { shouldProcessRateLimits } from '../rateLimitMocking.js'
+import { isProviderRoutingActive } from '../../utils/providers/providerRegistry.js' // Used for /mock-limits command
 import { extractConnectionErrorDetails, formatAPIError } from './errorUtils.js'
 
 export const API_ERROR_MESSAGE_PREFIX = 'API Error'
@@ -826,7 +827,9 @@ export function getAssistantMessageFromError(
       error: 'authentication_failed',
       content: getIsNonInteractiveSession()
         ? `Failed to authenticate. ${API_ERROR_MESSAGE_PREFIX}: ${error.message}`
-        : `Please run /login · ${API_ERROR_MESSAGE_PREFIX}: ${error.message}`,
+        : (isProviderRoutingActive()
+        ? `供应商拒绝请求（可能鉴权失败/余额不足），请用 /model 换档或到 ccliteweb 检查该提供商 · ${API_ERROR_MESSAGE_PREFIX}: ${error.message}`
+        : `Please run /login · ${API_ERROR_MESSAGE_PREFIX}: ${error.message}`),
     })
   }
 
