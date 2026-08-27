@@ -265,6 +265,7 @@ const COMMANDS = memoize((): Command[] => [
   skills,
   stats,
   status,
+  turbo,
   tag,
   theme,
   // feedback removed
