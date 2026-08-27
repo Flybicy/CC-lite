@@ -100,14 +100,6 @@ export async function getAnthropicClient({
       ? resolveTierConnectionByTier(tierOverride)
       : resolveTierConnection(source)
 
-  if (process.env.CCLITE_TIER_DEBUG) {
-    // Human-observable routing: which provider actually serves this request.
-    // Turned on with CCLITE_TIER_DEBUG=1 (stderr so stdout UIs stay clean).
-    const desc = tierConn.source === 'routing'
-      ? `tier=${tierConn.tier} provider=${tierConn.type} baseURL=${tierConn.baseURL} model=${tierConn.model}`
-      : 'tier=env (no providers.json binding)'
-    process.stderr.write(`[cclite:tier] ${desc}\n`)
-  }
 
   // Provider-scoped custom headers ride along with the routed connection, so
   // a tier switch swaps them too. Merged last → the provider's explicit
