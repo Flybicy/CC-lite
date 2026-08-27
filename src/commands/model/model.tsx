@@ -27,6 +27,10 @@ import {
   type ModelTier,
 } from '../../utils/providers/providerRegistry.js'
 import {
+  clearTierModelOverride,
+  setTierModelOverride,
+} from '../../utils/providers/tierOverrides.js'
+import {
   checkOpus1mAccess,
   checkSonnet1mAccess,
 } from '../../utils/model/check1mAccess.js'
@@ -114,6 +118,8 @@ function SetModelAndClose({
 }): React.ReactNode {
   const isFastMode = useAppState(s => s.fastMode)
   const setAppState = useSetAppState()
+  const activeMainLoop = useAppState(s => s.mainLoopModel)
+  const activeSessionModel = useAppState(s => s.mainLoopModelForSession)
   const model = args === 'default' ? null : args
 
   React.useEffect(() => {
@@ -147,10 +153,35 @@ function SetModelAndClose({
       }
 
       if (isKnownAlias(model)) {
+        // Bare tier codename resets any pinned session override on it —
+        // otherwise an old '/model glm-5.3' would still shadow the tier.
+        if (isTierAlias(model)) clearTierModelOverride(model)
         setModel(model)
         return
       }
 
+      // Concrete id while the session is running on a tier codename:
+      // interpret it as 'same provider, different model' (a session-level
+      // override on the active tier) instead of an env fallback. E.g. with
+      // pro active, '/model glm-5.3' means 'pro 档供应商下用 glm-5.3'.
+      const activeTierCandidate = (activeSessionModel ?? activeMainLoop) ?? ''
+      if (
+        !isKnownAlias(model) &&
+        typeof activeTierCandidate === 'string' &&
+        isTierAlias(activeTierCandidate)
+      ) {
+        const { valid, error } = await validateModel(model)
+        if (!valid) {
+          onDone(error || `Model '${model}' not found`, { display: 'system' })
+          return
+        }
+        setTierModelOverride(activeTierCandidate, model)
+        onDone(
+          `已把 ${activeTierCandidate} 档的模型换成 ${model}（本会话）· 供应商不变`,
+          { display: 'system' },
+        )
+        return
+      }
       try {
         const { valid, error } = await validateModel(model)
         if (valid) {

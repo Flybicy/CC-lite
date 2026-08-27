@@ -41,6 +41,7 @@ import {
 import { homedir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { z } from 'zod/v4'
+import { getTierModelOverride } from './tierOverrides.js'
 
 export type ProviderType = 'openai' | 'anthropic'
 
@@ -274,7 +275,7 @@ export function resolveTierProvider(
   if (!binding) return null
   const provider = cfg.providers.find(p => p.id === binding.providerId)
   if (!provider) return null
-  return { tier, scope: TIER_TO_SCOPE[tier], provider, model: binding.model, contextWindow: binding.contextWindow, images: binding.images ?? undefined }
+  return { tier, scope: TIER_TO_SCOPE[tier], provider, model: getTierModelOverride(tier) ?? binding.model, contextWindow: binding.contextWindow, images: binding.images ?? undefined }
 }
 
 /** Resolved aux-slot binding (vision provider). */
