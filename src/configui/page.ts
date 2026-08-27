@@ -323,6 +323,17 @@ function clearForm(){
 \$('saveProv').onclick = saveProv
 \$('fetchModels').onclick = fetchPreview
 \$('cancelEdit').onclick = function(){ clearForm(); \$('editorTitle').textContent='添加提供商' }
+\$('fillHeaders').onclick = function(){
+  const t = \$('f_type').value
+  const rec = t === 'anthropic'
+    ? { "User-Agent": "claude-cli/2.0.30 (external, cli)", "x-app": "cli" }
+    : { "User-Agent": "curl/8.0" }
+  let cur = {}
+  try { const raw = \$('f_headers').value.trim(); if (raw) cur = JSON.parse(raw) } catch {}
+  \$('f_headers').value = JSON.stringify({ ...cur, ...rec }, null, 2)
+  toast('已填好该类型常用的推荐头（可再改）', 'ok')
+}
+
 \$('saveTiers').onclick = saveTiers
 reload().catch(function(e){ toast('读取配置失败: '+e.message,'err') })
 </script>

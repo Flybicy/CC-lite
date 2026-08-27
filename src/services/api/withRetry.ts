@@ -127,6 +127,21 @@ export type FallbackReason = 'balance' | 'transient'
  * Anthropic and many OpenAI-compatible relays return 400/403 with a message
  * about the credit balance (domestic relays often phrase it in Chinese).
  */
+/**
+ * Content-filter refusals (new-api / one-api style domestic relays often
+ * return HTTP 500 with {"code":"sensitive_words_detected"} even though it is
+ * a definitive refusal). Retry would produce the identical error every
+ * time, so these must short-circuit.
+ */
+export function isContentFilterError(error: unknown): boolean {
+  if (!(error instanceof APIError)) return false
+  const extra =
+    'error' in error && error.error !== null && typeof error.error === 'object'
+      ? JSON.stringify(error.error)
+      : ''
+  const hay = `${error.message ?? ''} ${extra}`.toLowerCase()
+  return /sensitive.?word|content.?filter|content.?policy|risk.?control|内容安全|敏感词|违规/.test(hay)
+}
 export function isBalanceError(error: unknown): boolean {
   if (!(error instanceof APIError)) return false
   if (error.status === 402) return true
@@ -827,6 +842,11 @@ function shouldRetry(error: APIError): boolean {
   }
 
   // OAuth token revoked retry has been stripped.
+  // Sensitive-word / content-filter failures look like generic 500s on
+  // domestic relays but are prompts being rejected — retrying just burns
+  // backoff cycles for nothing. Detect and refuse explicitly.
+  if (isContentFilterError(error)) return false
+
   // Retry internal errors.
   if (error.status && error.status >= 500) return true
 
