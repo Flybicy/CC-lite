@@ -204,8 +204,18 @@ function Clone-Repo {
   if (Test-Path $BuildDir) {
     Write-Warn "$BuildDir already exists"
     if (Test-Path (Join-Path $BuildDir ".git")) {
-      Write-Info "Pulling latest changes..."
-      git -C $BuildDir pull --ff-only origin main 2>$null
+      # The old "pull --ff-only … 2>$null" silently swallowed failures and
+      # left a stale source tree as a "successful" install. Fetch the exact
+      # remote tip and force the local tree to match it instead.
+      Write-Info "Updating source to remote main..."
+      git -C $BuildDir fetch origin main --depth 1 2>&1 | Out-Null
+      git -C $BuildDir reset --hard FETCH_HEAD 2>&1 | Out-Null
+      if ($LASTEXITCODE -ne 0) {
+        Write-Warn "git update failed; removing and re-cloning $BuildDir"
+        Remove-Item -Recurse -Force $BuildDir
+        git clone --depth 1 $Repo $BuildDir
+        if ($LASTEXITCODE -ne 0) { Write-Fail "git clone failed." }
+      }
     }
   } else {
     Write-Info "Cloning repository to $BuildDir..."
