@@ -84,6 +84,17 @@ export function Clawd(t0) {
     pose: t2
   } = t1;
   const pose = t2 === undefined ? "default" : t2;
+  // Classic conhost（旧版 PowerShell 蓝窗，光栅字体缺方块字形）会把 Clawd
+  // 的四分位/方块字符渲染成乱码。win32 + 无 WT_SESSION 时降级为纯 ASCII：
+  if (process.platform === "win32" && !process.env.WT_SESSION) {
+    return (
+      <Box flexDirection="column">
+        <Text color="clawd_body">{"  CC-lite  "}</Text>
+        <Text color="clawd_body" backgroundColor="clawd_background">{" [>]====[<] "}</Text>
+        <Text color="clawd_body">{"   \/__\/   "}</Text>
+      </Box>
+    );
+  }
   if (env.terminal === "Apple_Terminal") {
     let t3;
     if ($[2] !== pose) {
