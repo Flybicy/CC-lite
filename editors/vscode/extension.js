@@ -265,6 +265,7 @@ class ChatViewProvider {
   resolveWebviewView(view) {
     this.view = view;
     view.webview.options = { enableScripts: true };
+    setTimeout(() => this.post({ type: 'mode', mode: permissionMode() }), 50);
     view.webview.html = renderHtml(view.webview.cspSource);
     view.webview.onDidReceiveMessage(msg => this.onMessage(msg));
     this.newSession();
@@ -436,6 +437,7 @@ class ChatViewProvider {
     if (!picked) return;
     const mode = picked.label.replace(/^(\$\(check\) )/, '');
     await vscode.workspace.getConfiguration('cclite').update('permissionMode', mode, vscode.ConfigurationTarget.Global);
+    this.post({ type: 'mode', mode });
     this.newSession();
   }
 
@@ -477,7 +479,12 @@ function renderHtml(cspSource) {
   #msgs::-webkit-scrollbar { width:8px; }
   #msgs::-webkit-scrollbar-thumb { background:transparent; border-radius:4px; }
   #msgs:hover::-webkit-scrollbar-thumb { background:var(--vscode-scrollbarSlider-background); }
-  .msg { margin:6px 0; padding:8px 10px; border-radius:8px; white-space:pre-wrap; word-break:break-word; font-size:13px; line-height:1.5; }
+  .row { display:flex; margin:8px 0; }
+.row.u { justify-content:flex-end; }
+.row.a { justify-content:flex-start; }
+.bubble { max-width:82%; padding:9px 12px; border-radius:14px; white-space:pre-wrap; word-break:break-word; font-size:13px; line-height:1.55; }
+.user .bubble { background:var(--vscode-button-background); color:var(--vscode-button-foreground); border-bottom-right-radius:4px; }
+.assistant .bubble { background:var(--vscode-sideBar-background); border:1px solid var(--vscode-panel-border); border-bottom-left-radius:4px; }
   .user { background: var(--vscode-input-background); border:1px solid var(--vscode-input-border); margin-left:12%; }
   .assistant { background: var(--vscode-sideBar-background); }
   .tool, .sys { color: var(--vscode-descriptionForeground); font-size:12px; padding:2px 10px; }
@@ -532,10 +539,10 @@ function renderHtml(cspSource) {
           <button class="pop-item" data-act="attachFile">📄 引用文件…</button>
           <button class="pop-item" data-act="attachSelection">✂ 引用选中代码</button>
           <button class="pop-item" data-act="attachSkill">🧩 插入技能…</button>
-          <div class="pop-sep"></div>
-          <button class="pop-item" data-act="pickMode">🛡 权限模式…</button>
+
         </div>
       </div>
+      <button class="pill" id="modeBtn" title="权限模式">🛡 mode</button>
       <div id="drawerWrap">
         <button class="pill" id="drawerBtn" title="模型与思考">pro · auto</button>
         <div id="drawer" hidden>
@@ -570,6 +577,20 @@ function renderHtml(cspSource) {
   let currentAssistantEl = null;
 
   function el(cls, text) {
+    // Row wraps the bubble for left/right alignment: user (right) vs
+    // assistant/system (left). Tool + error notes stay as plain lines.
+    if (cls === 'user' || cls === 'assistant') {
+      const row = document.createElement('div');
+      row.className = 'row ' + (cls === 'user' ? 'u' : 'a');
+      const bubble = document.createElement('div');
+      bubble.className = 'bubble';
+      bubble.textContent = text;
+      row.appendChild(bubble);
+      msgs.appendChild(row);
+      msgs.scrollTop = msgs.scrollHeight;
+      // Return the bubble — assistant streaming deltas write into it.
+      return bubble;
+    }
     const d = document.createElement('div');
     d.className = 'msg ' + cls;
     d.textContent = text;
@@ -596,6 +617,8 @@ function renderHtml(cspSource) {
   function syncDrawerLabel() { drawerBtn.textContent = tierSel.value + ' · ' + effortSel.value; }
   drawerBtn.onclick = ev => { ev.stopPropagation(); drawer.hidden = !drawer.hidden; };
   document.addEventListener('click', ev => { if (!drawer.hidden && !drawer.contains(ev.target) && ev.target !== drawerBtn) drawer.hidden = true; });
+  const modeBtn = document.getElementById('modeBtn');
+  modeBtn.onclick = ev => { ev.stopPropagation(); vscode.postMessage({ type: 'pickMode' }); };
   const attachBtn = document.getElementById('attach');
   const attachMenu = document.getElementById('attachMenu');
   attachBtn.onclick = ev => { ev.stopPropagation(); attachMenu.hidden = !attachMenu.hidden; drawer.hidden = true; };
@@ -615,6 +638,9 @@ function renderHtml(cspSource) {
   window.addEventListener('message', e => {
     const m = e.data;
     switch (m.type) {
+      case 'mode':
+        modeBtn.textContent = '🛡 ' + (m.mode || 'acceptEdits');
+        break;
       case 'reset':
         msgs.innerHTML = '';
         tierSel.value = m.tier;
