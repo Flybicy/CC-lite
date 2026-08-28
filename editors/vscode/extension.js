@@ -102,6 +102,65 @@ function cliWebuiCmd() {
   return process.platform === 'win32' ? `& "${cli}" config` : `"${cli}" config`;
 }
 
+/**
+ * Same sanitize rule cclite uses for ~/.claude/projects/<dir>/ (see
+ * sessionStoragePortable.ts). Welcome页靠它列出本工作区的最近会话。
+ */
+function sanitizeWorkspacePath(name) {
+  const sanitized = String(name).replace(/[^a-zA-Z0-9]/g, '-');
+  if (sanitized.length <= 200) return sanitized;
+  // cclite hashes over-long names; the welcome页Is best-effort — skip.
+  return sanitized;
+}
+
+/** Up to 8 most recent cclite sessions for the current workspace. */
+function listRecentSessions() {
+  try {
+    const ws = workspaceRoot();
+    const dir = path.join(os.homedir(), '.claude', 'projects', sanitizeWorkspacePath(ws));
+    if (!fs.existsSync(dir)) return [];
+    return fs.readdirSync(dir)
+      .filter(n => n.endsWith('.jsonl') && !n.endsWith('.meta.json'))
+      .map(n => {
+        const full = path.join(dir, n);
+        let stat;
+        try { stat = fs.statSync(full); } catch { return null; }
+        const id = n.replace(/.jsonl$/, '');
+        const title = readFirstUserMessage(full, id);
+        return { id, at: stat.mtime.getTime(), title };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.at - a.at)
+      .slice(0, 8);
+  } catch { return []; }
+}
+
+function readFirstUserMessage(file, fallback) {
+  try {
+    const fd = fs.openSync(file, 'r');
+    const buf = Buffer.alloc(32 * 1024);
+    const bytes = fs.readSync(fd, buf, 0, buf.length, 0);
+    fs.closeSync(fd);
+    for (const line of buf.subarray(0, bytes).toString('utf8').split('\n')) {
+      if (!line.trim()) continue;
+      try {
+        const obj = JSON.parse(line);
+        if (obj.type === 'user' && obj.message) {
+          const content = obj.message.content;
+          const text = typeof content === 'string'
+            ? content
+            : Array.isArray(content)
+              ? content.filter(c => c && c.type === 'text').map(c => c.text).join(' ')
+              : '';
+          const clean = text.trim();
+          if (clean) return clean.length > 40 ? clean.slice(0, 40) + '…' : clean;
+        }
+      } catch { /* partial line */ }
+    }
+  } catch { /* unreadable */ }
+  return fallback.slice(0, 8);
+}
+
 function shellQuote(s) {
   const escaped = process.platform === 'win32'
     ? String(s).replace(/'/g, "''")       // PowerShell single-quote escape
@@ -422,20 +481,12 @@ class ChatViewProvider {
     if (picked) this.post({ type: 'insertText', text: `/${picked} ` });
   }
 
-  async pickMode() {
-    const modes = [
-      { label: 'default', description: '每步询问' },
-      { label: 'acceptEdits', description: '自动接受编辑（默认，推荐）' },
-      { label: 'plan', description: '先规划，只读不改动' },
-      { label: 'bypassPermissions', description: '全部放行（仍有硬安全兜底）' },
-    ];
+  async pickMode(fromWebviewMode) {
+    // The webview popover already picked the mode; this only persists + restarts.
+    const mode = typeof fromWebviewMode === 'string' ? fromWebviewMode : '';
+    if (!['default', 'acceptEdits', 'plan', 'bypassPermissions'].includes(mode)) return;
     const current = permissionMode();
-    const picked = await vscode.window.showQuickPick(
-      modes.map(m => ({ ...m, label: m.label === current ? `$(check) ${m.label}` : m.label })),
-      { placeHolder: '选择会话权限模式（切换后会重开会话）' },
-    );
-    if (!picked) return;
-    const mode = picked.label.replace(/^(\$\(check\) )/, '');
+    if (mode === current) return;
     await vscode.workspace.getConfiguration('cclite').update('permissionMode', mode, vscode.ConfigurationTarget.Global);
     this.post({ type: 'mode', mode });
     this.newSession();
@@ -485,8 +536,6 @@ function renderHtml(cspSource) {
 .bubble { max-width:82%; padding:9px 12px; border-radius:14px; white-space:pre-wrap; word-break:break-word; font-size:13px; line-height:1.55; }
 .user .bubble { background:var(--vscode-button-background); color:var(--vscode-button-foreground); border-bottom-right-radius:4px; }
 .assistant .bubble { background:var(--vscode-sideBar-background); border:1px solid var(--vscode-panel-border); border-bottom-left-radius:4px; }
-  .user { background: var(--vscode-input-background); border:1px solid var(--vscode-input-border); margin-left:12%; }
-  .assistant { background: var(--vscode-sideBar-background); }
   .tool, .sys { color: var(--vscode-descriptionForeground); font-size:12px; padding:2px 10px; }
   .tool { font-style:italic; }
   .err { color: var(--vscode-errorForeground); font-size:12px; padding:2px 10px; white-space:pre-wrap; }
@@ -498,9 +547,10 @@ function renderHtml(cspSource) {
     border:1px solid var(--vscode-dropdown-border); border-radius:999px; padding:3px 10px; font-size:12px; cursor:pointer; }
   .pill:hover { filter:brightness(1.15); }
   #attachWrap { position:relative; order:1; }
-  #controls .spacer { order:2; }
-  #drawerWrap { order:3; }
-  #send { order:4; }
+#modeBtn { order:2; }
+  #controls .spacer { order:3; }
+  #drawerWrap { order:4; }
+  #send { order:5; }
   .pop[hidden] { display:none !important }
   .pop { position:absolute; bottom:38px; left:0; min-width:170px; padding:6px; z-index:10;
     background: var(--vscode-quickInput-background); border:1px solid var(--vscode-panel-border);
@@ -618,7 +668,8 @@ function renderHtml(cspSource) {
   drawerBtn.onclick = ev => { ev.stopPropagation(); drawer.hidden = !drawer.hidden; };
   document.addEventListener('click', ev => { if (!drawer.hidden && !drawer.contains(ev.target) && ev.target !== drawerBtn) drawer.hidden = true; });
   const modeBtn = document.getElementById('modeBtn');
-  modeBtn.onclick = ev => { ev.stopPropagation(); vscode.postMessage({ type: 'pickMode' }); };
+  const modeMenu = buildModeMenu();
+  modeBtn.onclick = ev => { ev.stopPropagation(); modeMenu.hidden = !modeMenu.hidden; attachMenu.hidden = true; drawer.hidden = true; };
   const attachBtn = document.getElementById('attach');
   const attachMenu = document.getElementById('attachMenu');
   attachBtn.onclick = ev => { ev.stopPropagation(); attachMenu.hidden = !attachMenu.hidden; drawer.hidden = true; };
@@ -634,6 +685,38 @@ function renderHtml(cspSource) {
   tierSel.onchange = e => { syncDrawerLabel(); vscode.postMessage({ type: 'setTier', tier: e.target.value }); };
   effortSel.onchange = e => { syncDrawerLabel(); vscode.postMessage({ type: 'setEffort', effort: e.target.value }); };
   syncDrawerLabel();
+
+
+  // Popover host for permission mode choices. No vscode QuickPick roundtrip —
+  // consistent with the + / 模型抽屉 floating menus.
+  function buildModeMenu() {
+    let el = document.getElementById('modeMenu');
+    if (el) return el;
+    el = document.createElement('div');
+    el.id = 'modeMenu';
+    el.className = 'pop';
+    el.hidden = true;
+    ['default', 'acceptEdits', 'plan', 'bypassPermissions'].forEach(function(m){
+      const b = document.createElement('button');
+      b.className = 'pop-item';
+      b.dataset.mode = m;
+      b.textContent = m;
+      el.appendChild(b);
+    });
+    document.getElementById('attachWrap').appendChild(el);
+    // position it under modeBtn (attachWrap is its sibling wrapper)
+    el.style.position = 'absolute';
+    el.style.left = 'auto';
+    el.style.right = '0';
+    el.addEventListener('click', function(ev){
+      const m = ev.target && ev.target.dataset ? ev.target.dataset.mode : null;
+      if (!m) return;
+      el.hidden = true;
+      modeBtn.textContent = '\u{1F6E1} ' + m;
+      vscode.postMessage({ type: 'pickMode', mode: m });
+    });
+    return el;
+  }
 
   window.addEventListener('message', e => {
     const m = e.data;
