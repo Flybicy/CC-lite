@@ -494,6 +494,7 @@ function renderHtml(cspSource) {
   #controls .spacer { order:2; }
   #drawerWrap { order:3; }
   #send { order:4; }
+  .pop[hidden] { display:none !important }
   .pop { position:absolute; bottom:38px; left:0; min-width:170px; padding:6px; z-index:10;
     background: var(--vscode-quickInput-background); border:1px solid var(--vscode-panel-border);
     border-radius:10px; box-shadow: 0 4px 16px rgba(0,0,0,.35); display:flex; flex-direction:column; gap:2px; }
