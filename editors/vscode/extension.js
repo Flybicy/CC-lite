@@ -14,8 +14,21 @@ const { spawn } = require('child_process');
 // ---------------------------------------------------------------------------
 
 let _cliResolved;
+// Where the plugin ships its own cclite.exe; windows-only for now, with a
+// graceful PATH fallback elsewhere. This makes "install extension and talk"
+// work even when the user never ran install.ps1.
+function bundledCliPath(context) {
+  if (process.platform !== 'win32') return null;
+  const p = path.join(context.extensionPath, 'bin', 'cclite-win32-x64.exe');
+  return fs.existsSync(p) ? p : null;
+}
+let _bundledCli;
+let _extensionContext;
+function currentContext() { return _extensionContext; }
 function cliPath() {
   if (_cliResolved !== undefined) return _cliResolved;
+  const bundled = currentContext() && bundledCliPath(currentContext());
+  if (bundled) { _cliResolved = bundled; return bundled; }
   const configured = vscode.workspace.getConfiguration('cclite').get('cliPath');
   if (configured) { _cliResolved = configured; return configured; }
   // PATH probe first (covers fresh installs only after a window reload).
@@ -631,6 +644,12 @@ function renderHtml(cspSource) {
       case 'error':
         el('err', m.text);
         break;
+      case 'focusInput':
+        input.focus();
+        break;
+      case 'clearInput':
+        input.value = '';
+        break;
       case 'insertText':
         input.value = (input.value ? input.value + ' ' : '') + m.text;
         input.focus();
@@ -661,6 +680,7 @@ function getNonce() {
 // ---------------------------------------------------------------------------
 
 function activate(context) {
+  _extensionContext = context;
   const provider = new ChatViewProvider(context);
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider('cclite.chatView', provider)
@@ -714,6 +734,27 @@ function activate(context) {
       runInTerminal('CC-lite 分析', `${cliPath()} -p ${shellQuote(ask)}`);
     }),
     vscode.commands.registerCommand('cclite.webui', () => runInTerminal('CC-lite WebUI', cliWebuiCmd())),
+    // Claude Code has ctrl+esc = focus input: reveal the view then focus the
+    // composer inside the webview.
+    vscode.commands.registerCommand('cclite.focus', async () => {
+      await vscode.commands.executeCommand('workbench.view.extension.cclite');
+      setTimeout(() => provider.post({ type: 'focusInput' }), 100);
+    }),
+    // Claude Code / Codex both have "@mention" — insert a relative reference
+    // of the open file / selection into the composer without attaching it as
+    // a separate block. That's the everyday "talk about this file" gesture.
+    vscode.commands.registerCommand('cclite.insertAtMention', () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) { vscode.window.showInformationMessage('请先打开一个文件'); return; }
+      const rel = vscode.workspace.asRelativePath(editor.document.uri);
+      const start = editor.selection.start.line + 1;
+      const end = editor.selection.end.line + 1;
+      const range = start === end ? `L${start}` : `L${start}-L${end}`;
+      void vscode.commands.executeCommand('workbench.view.extension.cclite').then(() => {
+        setTimeout(() => provider.post({ type: 'insertText', text: `@${rel}:${range} ` }), 100);
+      });
+    }),
+    vscode.commands.registerCommand('cclite.clearComposer', () => provider.post({ type: 'clearInput' })),
   );
 }
 

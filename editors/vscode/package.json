@@ -2,7 +2,7 @@
   "name": "cclite",
   "displayName": "CC-lite",
   "description": "本地 CC-lite：侧边栏聊天面板（stream-json），终端命令，状态栏显示当前档位模型，导出对话",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "publisher": "local",
   "license": "MIT",
   "engines": {
@@ -92,9 +92,45 @@
         "command": "cclite.webui",
         "title": "打开配置 WebUI",
         "category": "CC-lite"
+      },
+      {
+        "command": "cclite.focus",
+        "title": "聚焦输入框",
+        "category": "CC-lite"
+      },
+      {
+        "command": "cclite.insertAtMention",
+        "title": "插入 @文件引用",
+        "category": "CC-lite"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "cclite.focus",
+        "key": "ctrl+escape",
+        "mac": "cmd+escape",
+        "when": "!editorTextFocus"
+      },
+      {
+        "command": "cclite.insertAtMention",
+        "key": "ctrl+alt+k",
+        "mac": "cmd+alt+k",
+        "when": "editorTextFocus"
+      },
+      {
+        "command": "cclite.newChat",
+        "key": "ctrl+shift+escape",
+        "mac": "cmd+shift+escape"
       }
     ],
     "menus": {
+      "editor/title": [
+        {
+          "command": "cclite.newChat",
+          "group": "navigation",
+          "when": "!editorIsReadonly"
+        }
+      ],
       "view/title": [
         {
           "command": "cclite.newChat",
