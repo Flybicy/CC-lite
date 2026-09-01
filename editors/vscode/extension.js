@@ -161,6 +161,29 @@ function readFirstUserMessage(file, fallback) {
   return fallback.slice(0, 8);
 }
 
+/** Replay user/assistant text turns from an existing session jsonl. */
+function readSessionTranscript(id) {
+  try {
+    const ws = workspaceRoot();
+    const file = path.join(os.homedir(), '.claude', 'projects', sanitizeWorkspacePath(ws), `${id}.jsonl`);
+    const out = [];
+    for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+      if (!line.trim()) continue;
+      let obj; try { obj = JSON.parse(line); } catch { continue; }
+      const msg = obj.message || {};
+      const content = msg.content;
+      const text = typeof content === 'string' ? content
+        : Array.isArray(content)
+          ? content.filter(c => c && c.type === 'text').map(c => c.text).join('')
+          : '';
+      if (!text.trim()) continue;
+      if (obj.type === 'user' || msg.role === 'user') out.push({ role: 'user', text });
+      else if (obj.type === 'assistant' || msg.role === 'assistant') out.push({ role: 'assistant', text });
+    }
+    return out.slice(-30);
+  } catch { return []; }
+}
+
 function shellQuote(s) {
   const escaped = process.platform === 'win32'
     ? String(s).replace(/'/g, "''")       // PowerShell single-quote escape
@@ -193,6 +216,7 @@ class ChatSession {
       '--permission-mode', permissionMode(),
     ];
     if (this.opts.tier) args.push('--model', this.opts.tier);
+    if (this.opts.resumeId) args.push('--resume', this.opts.resumeId);
     const env = { ...process.env };
     if (this.opts.effort && this.opts.effort !== 'auto') {
       env.CLAUDE_CODE_EFFORT_LEVEL = this.opts.effort;
@@ -260,7 +284,7 @@ class ChatSession {
     switch (ev.type) {
       case 'system':
         if (ev.subtype === 'init') {
-          this.onEvent({ type: 'system', sessionId: ev.session_id, model: ev.model });
+          this.onEvent({ type: 'system', sessionId: ev.session_id, model: ev.model, slashCommands: ev.slash_commands, skills: ev.skills });
         }
         return;
       case 'stream_event': {
@@ -319,6 +343,7 @@ class ChatViewProvider {
     this.busy = false;
     this.pendingAssistant = '';
     this.transcript = []; // { role: 'user'|'assistant', text }
+    this.slashCommands = null; // reported by the CLI's system/init frame
   }
 
   resolveWebviewView(view) {
@@ -332,6 +357,21 @@ class ChatViewProvider {
 
   post(msg) {
     if (this.view) this.view.webview.postMessage(msg);
+  }
+
+  /** Start a session whose id already exists (resume from history). */
+  resumeSession(id) {
+    if (!id) return;
+    if (this.session) this.session.dispose();
+    this.session = new ChatSession(
+      { tier: this.tier, effort: this.effort, cwd: workspaceRoot(), resumeId: id },
+      ev => this.onSessionEvent(ev),
+    );
+    this.transcript = readSessionTranscript(id);
+    this.busy = false;
+    this.post({ type: 'reset', tier: this.tier, effort: this.effort, resume: true });
+    this.post({ type: 'restore', items: this.transcript });
+    this.session.start();
   }
 
   newSession() {
@@ -387,6 +427,15 @@ class ChatViewProvider {
       case 'attachSkill':
         void this.attachSkill();
         return;
+      case 'attachPlugin':
+        void this.attachPlugin();
+        return;
+      case 'listSessions':
+        this.post({ type: 'sessions', items: listRecentSessions() });
+        return;
+      case 'resumeSession':
+        this.resumeSession(msg.id);
+        return;
       case 'pickMode':
         void this.pickMode();
         return;
@@ -396,6 +445,9 @@ class ChatViewProvider {
   onSessionEvent(ev) {
     switch (ev.type) {
       case 'system':
+        if (Array.isArray(ev.slashCommands)) this.slashCommands = ev.slashCommands;
+        if (Array.isArray(ev.skills)) this.slashCommands = [...new Set([...(this.slashCommands || []), ...ev.skills])];
+        if (this.slashCommands) this.post({ type: 'slashCommands', items: this.slashCommands });
         this.post({ type: 'info', text: `会话就绪 · ${ev.model || this.tier}` });
         return;
       case 'delta':
@@ -481,6 +533,26 @@ class ChatViewProvider {
     if (picked) this.post({ type: 'insertText', text: `/${picked} ` });
   }
 
+  async attachPlugin() {
+    const roots = [path.join(os.homedir(), '.claude', 'plugins')];
+    const ws = workspaceRoot();
+    if (ws) roots.push(path.join(ws, '.claude', 'plugins'));
+    const plugins = [];
+    for (const root of roots) {
+      let entries = [];
+      try { entries = fs.readdirSync(root, { withFileTypes: true }); } catch { continue; }
+      for (const e of entries) {
+        if (e.isDirectory() && !plugins.includes(e.name)) plugins.push(e.name);
+      }
+    }
+    if (!plugins.length) {
+      vscode.window.showInformationMessage('没有找到插件（~/.claude/plugins 或 项目/.claude/plugins）');
+      return;
+    }
+    const picked = await vscode.window.showQuickPick(plugins, { placeHolder: '选择要插入的插件' });
+    if (picked) this.post({ type: 'insertText', text: `/${picked} ` });
+  }
+
   async pickMode(fromWebviewMode) {
     // The webview popover already picked the mode; this only persists + restarts.
     const mode = typeof fromWebviewMode === 'string' ? fromWebviewMode : '';
@@ -525,6 +597,12 @@ function renderHtml(cspSource) {
   body { font-family: var(--vscode-font-family); margin:0; padding:0; display:flex; flex-direction:column; height:100vh; }
   #msgs { flex:1; overflow-y:auto; padding:10px; }
   html, body { overflow:hidden; }
+  #history { padding:10px 10px 0; overflow-y:auto; }
+  #history h3 { font-size:11px; margin:0 0 8px; color:var(--vscode-descriptionForeground); font-weight:600; text-transform:uppercase; letter-spacing:.02em; }
+  .hist-item { display:block; width:100%; text-align:left; background:var(--vscode-input-background); border:1px solid var(--vscode-input-border); border-radius:8px; padding:8px 10px; margin:0 0 6px; color:var(--vscode-foreground); cursor:pointer; font-size:12px; }
+  .hist-item:hover { background:var(--vscode-list-hoverBackground); }
+  .hist-item .t { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .hist-item .w { display:block; margin-top:3px; font-size:11px; color:var(--vscode-descriptionForeground); }
   #msgs { scrollbar-width:thin; scrollbar-color:transparent transparent; }
   #msgs:hover { scrollbar-color:var(--vscode-scrollbarSlider-background) transparent; }
   #msgs::-webkit-scrollbar { width:8px; }
@@ -540,6 +618,15 @@ function renderHtml(cspSource) {
   .tool { font-style:italic; }
   .err { color: var(--vscode-errorForeground); font-size:12px; padding:2px 10px; white-space:pre-wrap; }
   #composer { margin:8px; border:1px solid var(--vscode-input-border); border-radius:14px; background: var(--vscode-input-background); padding:8px 8px 6px; }
+  #composer { position:relative; }
+  #slashMenu { position:absolute; bottom:100%; left:0; right:0; margin-bottom:4px; max-height:220px; overflow-y:auto;
+    background: var(--vscode-quickInput-background); border:1px solid var(--vscode-panel-border);
+    border-radius:10px; box-shadow: 0 4px 16px rgba(0,0,0,.35); z-index:20; padding:4px; }
+  #slashMenu[hidden] { display:none; }
+  .slash-item { display:flex; align-items:baseline; gap:8px; padding:5px 8px; border-radius:6px; cursor:pointer; font-size:12px; }
+  .slash-item.sel, .slash-item:hover { background: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground); }
+  .slash-item .n { font-weight:600; flex:none; }
+  .slash-item .d { opacity:.7; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   #input { width:100%; box-sizing:border-box; background:transparent; color: var(--vscode-input-foreground);
     border:none; outline:none; resize:none; font-family:inherit; font-size:13px; min-height:36px; }
   #controls { display:flex; align-items:center; gap:6px; margin-top:4px; }
@@ -552,7 +639,7 @@ function renderHtml(cspSource) {
   #drawerWrap { order:4; }
   #send { order:5; }
   .pop[hidden] { display:none !important }
-  .pop { position:absolute; bottom:38px; left:0; min-width:170px; padding:6px; z-index:10;
+  .pop { position:absolute; bottom:38px; left:0; min-width:160px; max-width:calc(100vw - 20px); padding:6px; z-index:10;
     background: var(--vscode-quickInput-background); border:1px solid var(--vscode-panel-border);
     border-radius:10px; box-shadow: 0 4px 16px rgba(0,0,0,.35); display:flex; flex-direction:column; gap:2px; }
   .pop-item { text-align:left; background:transparent; color: var(--vscode-foreground); border:none;
@@ -567,7 +654,7 @@ function renderHtml(cspSource) {
   #send:disabled { opacity:.4; cursor:default; }
   .spinner { color: var(--vscode-descriptionForeground); font-size:12px; padding:0 12px 6px; display:none; }
   #drawerWrap { position:relative; }
-  #drawer { position:absolute; bottom:38px; right:0; min-width:220px; padding:10px; z-index:10;
+  #drawer { position:absolute; bottom:38px; left:0; min-width:200px; max-width:calc(100vw - 20px); padding:10px; z-index:10;
     background: var(--vscode-quickInput-background); border:1px solid var(--vscode-panel-border);
     border-radius:10px; box-shadow: 0 4px 16px rgba(0,0,0,.35); }
   #drawer .drawer-title { font-size:11px; color: var(--vscode-descriptionForeground); margin:6px 0 3px; }
@@ -578,14 +665,17 @@ function renderHtml(cspSource) {
 </style>
 </head>
 <body>
+  <div id="history" hidden></div>
   <div id="msgs"></div>
   <div class="spinner" id="spin">思考中…</div>
   <div id="composer">
+    <div id="slashMenu" hidden></div>
     <textarea id="input" placeholder="Do anything… (Enter 发送, Shift+Enter 换行)"></textarea>
     <div id="controls">
       <div id="attachWrap">
         <button class="pill" id="attach" title="添加引用 / 技能 / 模式">＋</button>
         <div id="attachMenu" class="pop" hidden>
+          <button class="pop-item" data-act="attachPlugin">🔌 插入插件…</button>
           <button class="pop-item" data-act="attachFile">📄 引用文件…</button>
           <button class="pop-item" data-act="attachSelection">✂ 引用选中代码</button>
           <button class="pop-item" data-act="attachSkill">🧩 插入技能…</button>
@@ -624,7 +714,24 @@ function renderHtml(cspSource) {
   const input = document.getElementById('input');
   const sendBtn = document.getElementById('send');
   const spin = document.getElementById('spin');
+  const historyBox = document.getElementById('history');
   let currentAssistantEl = null;
+  function showHistory(items) {
+    if (!historyBox) return;
+    if (!items || !items.length) { historyBox.innerHTML = ''; historyBox.hidden = true; return; }
+    historyBox.innerHTML = '<h3>最近会话</h3>' + items.map(function(it){
+      const when = new Date(it.at).toLocaleString(undefined, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+      return '<button class="hist-item" data-id="' + it.id + '"><span class="t">' + esc2(it.title) + '</span><span class="w">' + when + '</span></button>';
+    }).join('');
+    historyBox.hidden = false;
+    msgs.innerHTML = '';
+  }
+  function esc2(t){ return String(t||'').replace(/[&<>"\']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"\'":'&#39;'}[c]; }); }
+  historyBox.addEventListener('click', function(ev){
+    const btn = ev.target.closest('.hist-item');
+    if (!btn) return;
+    vscode.postMessage({ type: 'resumeSession', id: btn.dataset.id });
+  });
 
   function el(cls, text) {
     // Row wraps the bubble for left/right alignment: user (right) vs
@@ -657,7 +764,55 @@ function renderHtml(cspSource) {
   }
 
   sendBtn.onclick = send;
+  // ---- slash command menu (aligned with Claude Code: type '/' to filter) ----
+  const slashMenu = document.getElementById('slashMenu');
+  const SLASH_DESC = {
+    compact: '压缩上下文，保留摘要继续对话',
+    context: '查看当前上下文占用',
+    files: '列出会话中引用的文件',
+    version: '显示 cclite 版本',
+    review: '审查当前代码变更',
+    init: '生成 CLAUDE.md 项目说明',
+    loop: '让任务循环执行',
+  };
+  let slashNames = ['compact', 'context', 'files', 'version', 'review', 'init'];
+  let slashList = [];
+  let slashSel = 0;
+  function updateSlashMenu() {
+    const v = input.value;
+    if (!v.startsWith('/') || v.indexOf(' ') !== -1 || v.indexOf('\\n') !== -1) { slashMenu.hidden = true; return; }
+    const q = v.slice(1).toLowerCase();
+    slashList = slashNames.filter(n => !q || n.toLowerCase().indexOf(q) !== -1);
+    if (!slashList.length) { slashMenu.hidden = true; return; }
+    if (slashSel >= slashList.length) slashSel = 0;
+    slashMenu.innerHTML = slashList.map(function(n, i){
+      const d = SLASH_DESC[n] || '';
+      return '<div class="slash-item' + (i === slashSel ? ' sel' : '') + '" data-n="' + esc2(n) + '">'
+        + '<span class="n">/' + esc2(n) + '</span><span class="d">' + esc2(d) + '</span></div>';
+    }).join('');
+    slashMenu.hidden = false;
+  }
+  function pickSlash(name) {
+    input.value = '/' + name + ' ';
+    slashMenu.hidden = true;
+    input.focus();
+  }
+  slashMenu.addEventListener('mousedown', function(ev){
+    ev.preventDefault(); // keep input focus
+    const t = ev.target.closest('.slash-item');
+    if (t) pickSlash(t.dataset.n);
+  });
+  input.addEventListener('input', function(){ slashSel = 0; updateSlashMenu(); });
+  input.addEventListener('blur', function(){ setTimeout(function(){ slashMenu.hidden = true; }, 120); });
+
   input.addEventListener('keydown', e => {
+    if (!slashMenu.hidden && slashList.length) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); slashSel = (slashSel + 1) % slashList.length; updateSlashMenu(); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); slashSel = (slashSel - 1 + slashList.length) % slashList.length; updateSlashMenu(); return; }
+      if (e.key === 'Tab') { e.preventDefault(); pickSlash(slashList[slashSel]); return; }
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); pickSlash(slashList[slashSel]); return; }
+      if (e.key === 'Escape') { slashMenu.hidden = true; return; }
+    }
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
   });
   const drawer = document.getElementById('drawer');
@@ -706,8 +861,8 @@ function renderHtml(cspSource) {
     document.getElementById('attachWrap').appendChild(el);
     // position it under modeBtn (attachWrap is its sibling wrapper)
     el.style.position = 'absolute';
-    el.style.left = 'auto';
-    el.style.right = '0';
+    el.style.left = '0';
+    el.style.right = 'auto';
     el.addEventListener('click', function(ev){
       const m = ev.target && ev.target.dataset ? ev.target.dataset.mode : null;
       if (!m) return;
@@ -730,11 +885,26 @@ function renderHtml(cspSource) {
         effortSel.value = m.effort;
         syncDrawerLabel();
         currentAssistantEl = null;
-        el('sys', '新会话（' + m.tier + ' · ' + m.effort + '）');
+        slashMenu.hidden = true;
+        if (m.resume) {
+          historyBox.innerHTML = '';
+          historyBox.hidden = true;
+        } else {
+          vscode.postMessage({ type: 'listSessions' });
+        }
+        break;
+      case 'restore':
+        (m.items || []).forEach(function(it){ el(it.role === 'user' ? 'user' : 'assistant', it.text); });
+        el('sys', '已恢复上个会话，可继续提问');
         break;
       case 'userMessage':
+        historyBox.innerHTML = '';
+        historyBox.hidden = true;
         el('user', m.text);
         currentAssistantEl = null;
+        break;
+      case 'slashCommands':
+        if (Array.isArray(m.items) && m.items.length) slashNames = m.items;
         break;
       case 'assistantDelta':
         if (!currentAssistantEl || currentAssistantEl.dataset.final === '1') {
@@ -747,6 +917,10 @@ function renderHtml(cspSource) {
         break;
       case 'tool':
         el('tool', '⚙ ' + m.name);
+        break;
+      case 'sessions':
+        if (!m.items || !m.items.length) showHistory([]);
+        else showHistory(m.items);
         break;
       case 'info':
         el('sys', m.text);

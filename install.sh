@@ -198,8 +198,20 @@ version_gte() {
   [ "$newer" = "$1" ]
 }
 
+# WSL appends the Windows PATH, so `bun` may resolve to the *Windows* bun
+# (bun.exe), which then dies cd'ing into a UNC path with
+# "Module not found ./scripts/build.ts". Only accept a native ELF binary.
+bun_is_native() {
+  local bin
+  bin="$(command -v bun)" || return 1
+  case "$bin" in
+    /mnt/[a-z]/*|*.exe|*.EXE) return 1 ;;
+  esac
+  [ "$(head -c4 "$bin" 2>/dev/null)" = "$(printf '\177ELF')" ]
+}
+
 check_bun() {
-  if command -v bun &>/dev/null; then
+  if command -v bun &>/dev/null && bun_is_native; then
     local ver
     ver="$(bun --version 2>/dev/null || echo "0.0.0")"
     if version_gte "$ver" "$BUN_MIN_VERSION"; then

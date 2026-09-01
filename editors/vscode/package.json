@@ -2,7 +2,7 @@
   "name": "cclite",
   "displayName": "CC-lite",
   "description": "本地 CC-lite：侧边栏聊天面板（stream-json），终端命令，状态栏显示当前档位模型，导出对话",
-  "version": "1.6.1",
+  "version": "1.7.0",
   "publisher": "local",
   "license": "MIT",
   "engines": {
@@ -153,6 +153,7 @@
     }
   }
 }
+
 
 
 
