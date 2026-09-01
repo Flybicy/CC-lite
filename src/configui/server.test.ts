@@ -165,6 +165,18 @@ describe('config WebUI server', () => {
     expect(resp.status).toBe(403)
   })
 
+  it('--lan / lan option accepts non-loopback Host headers', async () => {
+    const lan = await startConfigServer(0, { lan: true })
+    try {
+      const resp = await fetch(lan.url + '/api/config', {
+        headers: { host: '192.168.1.10:1511' },
+      })
+      expect(resp.status).toBe(200)
+    } finally {
+      await lan.close()
+    }
+  })
+
   it('rejects a cross-origin request', async () => {
     const resp = await fetch(base + '/api/config', {
       headers: { origin: 'https://evil.example.com' },

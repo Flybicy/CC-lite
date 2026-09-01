@@ -427,7 +427,7 @@ export async function startConfigServer(
   const lan = opts?.lan ?? lanEnabled()
   const host = lan ? '0.0.0.0' : HOST
   const server = createServer((req, res) => {
-    void handleRequest(req, res).catch(err => {
+    void handleRequest(req, res, { lan }).catch(err => {
       try {
         json(res, 500, { error: String(err) })
       } catch {
