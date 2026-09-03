@@ -10,6 +10,7 @@ import {
   tryReadImageFromPath,
 } from '../utils/imagePaste.js'
 import type { ImageDimensions } from '../utils/imageResizer.js'
+import { getTextFromClipboard } from '../utils/imagePaste.js'
 import { getPlatform } from '../utils/platform.js'
 
 const CLIPBOARD_CHECK_DEBOUNCE_MS = 50
@@ -212,6 +213,46 @@ export function usePasteHandler({
   // the 'readable' listener in App.tsx, causing dropped characters.
 
   const wrappedOnInput = (input: string, key: Key, event: InputEvent): void => {
+    // Ctrl+V fallback: some terminals (e.g. legacy Windows consoles, certain
+    // remote/SSH setups) never emit paste events, so paste arrives as a bare
+    // ^V keypress. Read the clipboard ourselves and route it through the
+    // normal paste path. Terminals that support bracketed paste never reach
+    // this branch (the pasted text arrives with keypress.isPasted instead).
+    if (key.ctrl && input === 'v' && !event.keypress.isPasted) {
+      if (onImagePaste || onPaste) {
+        setIsPasting(true)
+        void (async () => {
+          try {
+            if (onImagePaste) {
+              const imageData = await getImageFromClipboard()
+              if (imageData && isMountedRef.current) {
+                onImagePaste(
+                  imageData.base64,
+                  imageData.mediaType,
+                  undefined,
+                  imageData.dimensions,
+                )
+                return
+              }
+            }
+            const text = await getTextFromClipboard()
+            if (text && onPaste && isMountedRef.current) {
+              onPaste(text)
+            }
+          } catch (error) {
+            if (isMountedRef.current) {
+              logError(error as Error)
+            }
+          } finally {
+            if (isMountedRef.current) {
+              setIsPasting(false)
+            }
+          }
+        })()
+      }
+      return
+    }
+
     // Detect paste from the parsed keypress event.
     // The keypress parser sets isPasted=true for content within bracketed paste.
     const isFromPaste = event.keypress.isPasted

@@ -241,6 +241,26 @@ export async function getImageFromClipboard(): Promise<ImageWithDimensions | nul
   }
 }
 
+/** Text-only clipboard read (image formats excluded). Used by the TUI's
+ * Ctrl+V fallback for terminals that never deliver paste input. */
+export async function getTextFromClipboard(): Promise<string | null> {
+  const platform = process.platform as SupportedPlatform
+  const command =
+    platform === 'darwin'
+      ? 'pbpaste'
+      : platform === 'win32'
+        ? 'powershell -NoProfile -Command "Get-Clipboard -Raw"'
+        : 'xclip -selection clipboard -t text/plain -o 2>/dev/null || wl-paste --no-newline -t text/plain 2>/dev/null'
+  try {
+    const result = await execa(command, { shell: true, reject: false })
+    if (result.exitCode !== 0 || !result.stdout) return null
+    return result.stdout.replace(/\r\n/g, '\n')
+  } catch (e) {
+    logError(e as Error)
+    return null
+  }
+}
+
 export async function getImagePathFromClipboard(): Promise<string | null> {
   const { commands } = getClipboardCommands()
 
