@@ -430,6 +430,9 @@ class ChatViewProvider {
       case 'attachPlugin':
         void this.attachPlugin();
         return;
+      case 'pasteClipboard':
+        void this.pasteClipboard();
+        return;
       case 'listSessions':
         this.post({ type: 'sessions', items: listRecentSessions() });
         return;
@@ -531,6 +534,18 @@ class ChatViewProvider {
     }
     const picked = await vscode.window.showQuickPick(skills, { placeHolder: '选择要插入的技能' });
     if (picked) this.post({ type: 'insertText', text: `/${picked} ` });
+  }
+
+
+  /** Paste via the extension host: webview Ctrl+V is unreliable for some
+   * focus states / remote setups, this path always works. */
+  async pasteClipboard() {
+    const text = await vscode.env.clipboard.readText();
+    if (!text) {
+      vscode.window.showInformationMessage('剪贴板里没有文本');
+      return;
+    }
+    this.post({ type: 'insertText', text: text.replace(/\r\n?/g, '\n') });
   }
 
   async attachPlugin() {
@@ -675,6 +690,7 @@ function renderHtml(cspSource) {
       <div id="attachWrap">
         <button class="pill" id="attach" title="添加引用 / 技能 / 模式">＋</button>
         <div id="attachMenu" class="pop" hidden>
+          <button class="pop-item" data-act="pasteClipboard">📋 粘贴剪贴板</button>
           <button class="pop-item" data-act="attachPlugin">🔌 插入插件…</button>
           <button class="pop-item" data-act="attachFile">📄 引用文件…</button>
           <button class="pop-item" data-act="attachSelection">✂ 引用选中代码</button>
