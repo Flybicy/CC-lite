@@ -201,6 +201,13 @@ function Ensure-Ripgrep {
 
 # --- clone & build ---
 function Clone-Repo {
+  function New-SourceClone {
+    if (Test-Path $BuildDir) { Remove-Item -Recurse -Force $BuildDir }
+    Write-Info "Cloning repository to $BuildDir..."
+    git clone --depth 1 $Repo $BuildDir
+    if ($LASTEXITCODE -ne 0) { Write-Fail "git clone failed." }
+  }
+
   if (Test-Path $BuildDir) {
     Write-Warn "$BuildDir already exists"
     if (Test-Path (Join-Path $BuildDir ".git")) {
@@ -212,15 +219,18 @@ function Clone-Repo {
       git -C $BuildDir reset --hard FETCH_HEAD 2>&1 | Out-Null
       if ($LASTEXITCODE -ne 0) {
         Write-Warn "git update failed; removing and re-cloning $BuildDir"
-        Remove-Item -Recurse -Force $BuildDir
-        git clone --depth 1 $Repo $BuildDir
-        if ($LASTEXITCODE -ne 0) { Write-Fail "git clone failed." }
+        New-SourceClone
       }
+    } else {
+      Write-Warn "Cached directory is not a git checkout; removing and re-cloning"
+      New-SourceClone
     }
   } else {
-    Write-Info "Cloning repository to $BuildDir..."
-    git clone --depth 1 $Repo $BuildDir
-    if ($LASTEXITCODE -ne 0) { Write-Fail "git clone failed." }
+    New-SourceClone
+  }
+
+  if (-not (Test-Path (Join-Path $BuildDir "package.json"))) {
+    Write-Fail "Source cache is incomplete: $BuildDir has no package.json. Remove it and retry."
   }
   Write-Ok "Source cache: $BuildDir"
 }
@@ -230,7 +240,11 @@ function Install-Deps {
   Push-Location $BuildDir
   try {
     bun install --frozen-lockfile 2>$null
-    if ($LASTEXITCODE -ne 0) { bun install }
+    if ($LASTEXITCODE -ne 0) {
+      Write-Warn "Frozen dependency install failed; falling back to bun install"
+      bun install
+      if ($LASTEXITCODE -ne 0) { Write-Fail "bun install failed in $BuildDir." }
+    }
     Write-Ok "Dependencies installed"
   } finally { Pop-Location }
 }
@@ -240,6 +254,7 @@ function Build-Bundle {
   Push-Location $BuildDir
   try {
     bun run build:bundle:cclite
+    if ($LASTEXITCODE -ne 0) { Write-Fail "bun run build:bundle:cclite failed in $BuildDir." }
     $bundle = Join-Path $BuildDir "cclite.js"
     if (-not (Test-Path $bundle)) { Write-Fail "Build did not produce cclite.js." }
     # Standalone verifier shipped next to the bundle so the model can be
