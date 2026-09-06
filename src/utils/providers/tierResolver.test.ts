@@ -42,7 +42,7 @@ const CFG: ProviderConfig = {
     },
   ],
   tiers: {
-    pro: { providerId: 'deepseek', model: 'deepseek-chat' },
+    opus: { providerId: 'deepseek', model: 'deepseek-chat' },
   },
 }
 
@@ -52,7 +52,7 @@ describe('resolveTierConnection', () => {
     const conn = resolveTierConnection('repl_main_thread')
     expect(conn.source).toBe('routing')
     if (conn.source === 'routing') {
-      expect(conn.tier).toBe('pro')
+      expect(conn.tier).toBe('opus')
       expect(conn.scope).toBe('main')
       expect(conn.type).toBe('openai')
       expect(conn.baseURL).toBe('https://api.deepseek.com/v1')
@@ -61,24 +61,24 @@ describe('resolveTierConnection', () => {
     }
   })
 
-  it('maps agent sources to the se tier', () => {
+  it('maps agent sources to the haiku tier', () => {
     saveProviderConfig(CFG)
-    // se is unbound in CFG → env fallback, but the tier label is still se
+    // haiku is unbound in CFG → env fallback, but the tier label is still haiku
     const conn = resolveTierConnection('agent:builtin:Task')
     expect(conn.source).toBe('env')
-    expect(conn.tier).toBe('se')
+    expect(conn.tier).toBe('haiku')
     expect(conn.scope).toBe('subagent')
   })
 
-  it('maps the advisor source to the pro tier (advisor follows the main loop)', () => {
+  it('maps the advisor source to the opus tier (advisor follows the main loop)', () => {
     saveProviderConfig(CFG)
     const conn = resolveTierConnection('advisor')
-    expect(conn.tier).toBe('pro')
+    expect(conn.tier).toBe('opus')
     expect(conn.scope).toBe('main')
   })
 
   it('falls back to env when the tier is unbound', () => {
-    const conn = resolveTierConnectionByTier('pro')
+    const conn = resolveTierConnectionByTier('opus')
     expect(conn.source).toBe('env')
   })
 })
@@ -100,9 +100,9 @@ describe('provider custom headers', () => {
           },
         },
       ],
-      tiers: { plus: { providerId: 'strict', model: 'some-model' } },
+      tiers: { sonnet: { providerId: 'strict', model: 'some-model' } },
     })
-    const conn = resolveTierConnectionByTier('plus')
+    const conn = resolveTierConnectionByTier('sonnet')
     expect(conn.source).toBe('routing')
     if (conn.source === 'routing') {
       expect(conn.headers).toEqual({
@@ -114,7 +114,7 @@ describe('provider custom headers', () => {
 
   it('omits headers when the provider has none', () => {
     saveProviderConfig(CFG)
-    const conn = resolveTierConnectionByTier('pro')
+    const conn = resolveTierConnectionByTier('opus')
     if (conn.source === 'routing') {
       expect(conn.headers).toBeUndefined()
     }
@@ -129,42 +129,42 @@ describe('tier contextWindow', () => {
       { id: 'o', label: 'O', type: 'openai', baseURL: 'https://o.example.com/v1', apiKey: '', models: [] },
     ],
     tiers: {
-      pro: { providerId: 'a', model: 'm1', contextWindow: 1_000_000 },
-      plus: { providerId: 'o', model: 'm2', contextWindow: 128_000 },
-      se: { providerId: 'a', model: 'm3' },
+      opus: { providerId: 'a', model: 'm1', contextWindow: 1_000_000 },
+      sonnet: { providerId: 'o', model: 'm2', contextWindow: 128_000 },
+      haiku: { providerId: 'a', model: 'm3' },
     },
   }
 
   it('resolves the configured window per tier', async () => {
     const { resolveTierContextWindow } = await import('./tierResolver.js')
     saveProviderConfig(CTX_CFG)
-    expect(resolveTierContextWindow('pro')).toBe(1_000_000)
-    expect(resolveTierContextWindow('plus')).toBe(128_000)
-    expect(resolveTierContextWindow('se')).toBeUndefined()
+    expect(resolveTierContextWindow('opus')).toBe(1_000_000)
+    expect(resolveTierContextWindow('sonnet')).toBe(128_000)
+    expect(resolveTierContextWindow('haiku')).toBeUndefined()
   })
 
   it('only asks for the 1M beta header on anthropic providers above 200K', async () => {
     const { tierNeeds1mBetaHeader } = await import('./tierResolver.js')
     saveProviderConfig(CTX_CFG)
-    expect(tierNeeds1mBetaHeader('pro')).toBe(true)
-    expect(tierNeeds1mBetaHeader('plus')).toBe(false) // openai provider
-    expect(tierNeeds1mBetaHeader('se')).toBe(false) // no window configured
+    expect(tierNeeds1mBetaHeader('opus')).toBe(true)
+    expect(tierNeeds1mBetaHeader('sonnet')).toBe(false) // openai provider
+    expect(tierNeeds1mBetaHeader('haiku')).toBe(false) // no window configured
   })
 
   it('feeds getContextWindowForModel through the tier codename and scope', async () => {
     const { getContextWindowForModel } = await import('../context.js')
     saveProviderConfig(CTX_CFG)
-    expect(getContextWindowForModel('pro')).toBe(1_000_000)
-    // Resolved model id: scope fallback maps main -> pro
+    expect(getContextWindowForModel('opus')).toBe(1_000_000)
+    // Resolved model id: scope fallback maps main -> opus
     expect(getContextWindowForModel('m1', [], 'main')).toBe(1_000_000)
   })
 })
 
 describe('case-insensitive tier lookup', () => {
-  it('uppercase /model PLUS hits the same binding as plus', () => {
+  it('uppercase /model sonnet hits the same binding as sonnet', () => {
     saveProviderConfig(CFG)
-    const l = resolveTierConnectionByTier('pro')
-    const u = resolveTierConnectionByTier('PRO' as 'pro')
+    const l = resolveTierConnectionByTier('opus')
+    const u = resolveTierConnectionByTier('opus' as 'opus')
     expect(l.source).toBe('routing')
     expect(u.source).toBe(l.source)
     if (u.source !== 'routing') return
@@ -174,6 +174,6 @@ describe('case-insensitive tier lookup', () => {
 
   it('mixed-case + whitespace also resolves', () => {
     saveProviderConfig(CFG)
-    expect(resolveTierConnectionByTier('  Pro  ' as 'pro').source).toBe('routing')
+    expect(resolveTierConnectionByTier('  opus  ' as 'opus').source).toBe('routing')
   })
 })

@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------------------
 // Tier-aware provider connection resolver — CC-lite
 //
-// Turns a query's tier (pro / plus / se) into the concrete connection details
+// Turns a query's tier (opus / sonnet / haiku) into the concrete connection details
 // the API layer needs: which backend transport (anthropic SDK vs OpenAI shim),
 // the base URL, the API key, and the model string.
 //
@@ -15,6 +15,7 @@
 
 import {
   resolveTierProvider,
+  normalizeTierName,
   tierForQuerySource,
   TIER_TO_SCOPE,
   type ModelScope,
@@ -77,14 +78,14 @@ export function tierNeeds1mBetaHeader(tier: ModelTier): boolean {
 
 /** Resolve connection details for an explicit tier. */
 export function resolveTierConnectionByTier(tier: ModelTier): TierResolution {
-  const normalized = tier.trim().toLowerCase() as ModelTier
+  const normalized = normalizeTierName(tier) ?? (tier.trim().toLowerCase() as ModelTier)
   const resolved = resolveTierProvider(normalized)
   const scope = TIER_TO_SCOPE[normalized]
-  if (!resolved) return { source: 'env', tier, scope }
+  if (!resolved) return { source: 'env', tier: normalized, scope }
   const { provider, model } = resolved
   return {
     source: 'routing',
-    tier,
+    tier: normalized,
     scope,
     type: provider.type,
     baseURL: provider.baseURL,

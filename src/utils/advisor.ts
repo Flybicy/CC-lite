@@ -8,15 +8,15 @@ import { resolveModelProfileModel } from './model/modelProfiles.js'
 
 /**
  * The Advisor model. The advisor rides the same tier as the main loop: when
- * `pro` is bound it gets 'pro', so a pro→plus→se downgrade carries the
- * advisor down with it. A bound-but-orphaned `plus` (no pro) still works for
+ * `opus` is bound it gets 'opus', so an opus→sonnet→haiku downgrade carries the
+ * advisor down with it. A bound-but-orphaned `sonnet` (no opus) still works for
  * setups that configure the advisor alone.
  */
 export function getAdvisorModel(): string | undefined {
   return (
     process.env.CLAUDE_CODE_ADVISOR_MODEL?.trim() ||
-    (isTierBound('pro') ? 'pro' : undefined) ||
-    (isTierBound('plus') ? 'plus' : undefined) ||
+    (isTierBound('opus') ? 'opus' : undefined) ||
+    (isTierBound('sonnet') ? 'sonnet' : undefined) ||
     resolveModelProfileModel('advisor') ||
     undefined
   )
@@ -59,8 +59,8 @@ export function getAdvisorModelFromProfiles(
 ): string | undefined {
   return (
     process.env.CLAUDE_CODE_ADVISOR_MODEL?.trim() ||
-    (isTierBound('pro') ? 'pro' : undefined) ||
-    (isTierBound('plus') ? 'plus' : undefined) ||
+    (isTierBound('opus') ? 'opus' : undefined) ||
+    (isTierBound('sonnet') ? 'sonnet' : undefined) ||
     modelProfiles?.advisor?.model ||
     undefined
   )

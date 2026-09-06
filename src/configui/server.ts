@@ -8,7 +8,7 @@
 // DNS rebinding to read /api/config — which contains plaintext API keys.
 //
 // The page manages ~/.claude/providers.json — the provider registry plus the
-// pro / plus / se tier bindings.
+// opus / sonnet / haiku tier bindings.
 //
 // Plain node:http so it works identically under Bun and Node runtimes.
 // ---------------------------------------------------------------------------

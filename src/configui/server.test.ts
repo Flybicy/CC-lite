@@ -52,9 +52,9 @@ describe('config WebUI server', () => {
     expect(html).toContain('CC-lite')
     expect(html).toContain('提供商')
     // the three tier codenames must be present in the page
-    expect(html).toContain('pro')
-    expect(html).toContain('plus')
-    expect(html).toContain('se')
+    expect(html).toContain('opus')
+    expect(html).toContain('sonnet')
+    expect(html).toContain('haiku')
   })
 
   it('adds a provider, reflects it in /api/config and on disk', async () => {
@@ -114,23 +114,23 @@ describe('config WebUI server', () => {
     expect(data.error).toContain('http')
   })
 
-  it('saves pro/plus/se bindings and clears on null', async () => {
+  it('saves opus/sonnet/haiku bindings and clears on null', async () => {
     const put = await call('/api/tiers', 'PUT', {
-      pro: { providerId: 'local-lm-studio', model: 'qwen2.5-7b' },
-      se: { providerId: 'local-lm-studio-2', model: 'qwen2.5-3b' },
-      plus: null,
+      opus: { providerId: 'local-lm-studio', model: 'qwen2.5-7b' },
+      haiku: { providerId: 'local-lm-studio-2', model: 'qwen2.5-3b' },
+      sonnet: null,
     })
     expect(put.status).toBe(200)
     resetProviderConfigCacheForTests()
     const cfg = loadProviderConfig()
-    expect(cfg.tiers.pro?.model).toBe('qwen2.5-7b')
-    expect(cfg.tiers.se?.providerId).toBe('local-lm-studio-2')
-    expect(cfg.tiers.plus).toBeUndefined()
+    expect(cfg.tiers.opus?.model).toBe('qwen2.5-7b')
+    expect(cfg.tiers.haiku?.providerId).toBe('local-lm-studio-2')
+    expect(cfg.tiers.sonnet).toBeUndefined()
   })
 
   it('rejects binding a tier to an unknown provider', async () => {
     const { status, data } = await call('/api/tiers', 'PUT', {
-      pro: { providerId: 'ghost', model: 'x' },
+      opus: { providerId: 'ghost', model: 'x' },
     })
     expect(status).toBe(400)
     expect(data.error).toContain('unknown provider')
@@ -149,8 +149,8 @@ describe('config WebUI server', () => {
     expect(del.status).toBe(200)
     resetProviderConfigCacheForTests()
     const cfg = loadProviderConfig()
-    expect(cfg.tiers.pro).toBeUndefined()
-    expect(cfg.tiers.se?.providerId).toBe('local-lm-studio-2')
+    expect(cfg.tiers.opus).toBeUndefined()
+    expect(cfg.tiers.haiku?.providerId).toBe('local-lm-studio-2')
   })
 
   it('returns 404 for unknown routes', async () => {

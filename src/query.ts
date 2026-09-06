@@ -60,6 +60,7 @@ import { prependUserContext, appendSystemContext } from './utils/api.js'
 import { isTierAlias } from './utils/model/aliases.js'
 import { resolveTierModel } from './utils/model/modelProfiles.js'
 import { resolveTierConnectionByTier } from './utils/providers/tierResolver.js'
+import { MODEL_TIERS, type ModelTier } from './utils/providers/providerRegistry.js'
 import {
   createAttachmentMessage,
   filterDuplicateMemoryAttachments,
@@ -367,9 +368,12 @@ async function* queryLoop(
       return undefined
     }
     let cur = codename
-    while (isTierAlias(cur) && cur !== 'se') {
+    // Walk the tier chain (opus → sonnet → haiku) down to one tier per hop;
+    // legacy codenames (pro/plus/se) index the same rows via normalization.
+    while (MODEL_TIERS.includes(cur as ModelTier) && cur !== MODEL_TIERS[MODEL_TIERS.length - 1]) {
       if (!resolveTierModel(cur)) return undefined
-      const next = cur === 'pro' ? 'plus' : 'se'
+      const next = MODEL_TIERS[MODEL_TIERS.indexOf(cur as ModelTier) + 1]
+      if (!next) return undefined
       if (!resolveTierModel(next)) return undefined
       if (!isNoOpHop(cur, next)) return next
       cur = next

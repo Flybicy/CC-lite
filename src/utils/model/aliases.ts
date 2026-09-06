@@ -2,15 +2,15 @@
  * CC-lite tier codenames. These are the public call names the whole codebase
  * uses instead of hardcoding vendor model IDs:
  *
- *   pro  — strongest model, main loop / planning
- *   plus — mid tier, Advisor reviews
- *   se   — economy tier, subagents and tool work
+ *   opus   — strongest model, main loop / planning
+ *   sonnet — mid tier, Advisor reviews
+ *   haiku  — economy tier, subagents and tool work
  *
  * Each one resolves through providers.json (configured in `cclite config`) at
  * call time, so changing the bound model in the WebUI takes effect on the next
  * request without restarting the CLI.
  */
-export const TIER_ALIASES = ['pro', 'plus', 'se'] as const
+export const TIER_ALIASES = ['opus', 'sonnet', 'haiku'] as const
 export type TierAlias = (typeof TIER_ALIASES)[number]
 
 export function isTierAlias(model: string): model is TierAlias {
@@ -18,11 +18,8 @@ export function isTierAlias(model: string): model is TierAlias {
 }
 
 export const MODEL_ALIASES = [
-  'pro',
-  'plus',
-  'se',
-  'sonnet',
   'opus',
+  'sonnet',
   'haiku',
   'best',
   'sonnet[1m]',

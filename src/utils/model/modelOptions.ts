@@ -464,7 +464,7 @@ function getKnownModelOption(model: string): ModelOption | null {
 }
 
 /**
- * CC-lite tier options (pro / plus / se). Only tiers actually bound in
+ * CC-lite tier options (opus / sonnet / haiku). Only tiers actually bound in
  * providers.json are offered, and they lead the list because on a CC-lite
  * install they are the models the user configured themselves.
  */
@@ -487,9 +487,9 @@ function getTierOptions(): ModelOption[] {
 // Short picker strings that double as failover documentation — keep them one
 // line, the UI truncates long descriptions.
 const TIER_PICKER_DESCRIPTIONS: Record<ModelTier, string> = {
-  pro: '主档位 · 默认主循环；失败自动降级到 plus',
-  plus: '第二档 · pro 失败时的顺位目标，完成一轮后换回 pro',
-  se: '兜底档 · plus 失败时的顺位目标，不再自动降级',
+  opus: '主档位 · 默认主循环；失败自动降级到 sonnet',
+  sonnet: '第二档 · opus 失败时的顺位目标，完成一轮后换回 opus',
+  haiku: '兜底档 · sonnet 失败时的顺位目标，不再自动降级',
 }
 
 export function getModelOptions(fastMode = false): ModelOption[] {

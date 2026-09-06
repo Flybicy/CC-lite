@@ -56,8 +56,8 @@ export const CONFIG_UI_PAGE = `<!DOCTYPE html>
   <p class="sub">本页面仅在 <b>127.0.0.1</b> 本机监听，所有配置保存在本地 <code id="cfgpath">~/.claude/providers.json</code>。
   保存后<b>下一次请求立即生效</b>，无需重启 cclite。</p>
 
-  <h2>对话档位（调用代号 <span class="tier-code">pro</span> / <span class="tier-code">plus</span> / <span class="tier-code">se</span>）</h2>
-  <p class="sub" style="margin-top:-6px">请求失败（超时 / 5xx / 429）时自动顺位降级 <b>pro → plus → se</b>，成功后下一轮自动换回高挡（最多自动降级 5 次）；余额不足 / 额度用尽会直接换到低档且<b>不再切回</b>，充值后用 <code>/model</code> 手动切换。也可在对话里用 <code>/model pro</code> / <code>/model plus</code> / <code>/model se</code> 随时手动指定。</p>
+  <h2>对话档位（调用代号 <span class="tier-code">opus</span> / <span class="tier-code">sonnet</span> / <span class="tier-code">haiku</span>）</h2>
+  <p class="sub" style="margin-top:-6px">请求失败（超时 / 5xx / 429）时自动顺位降级 <b>opus → sonnet → haiku</b>，成功后下一轮自动换回高挡（最多自动降级 5 次）；余额不足 / 额度用尽会直接换到低档且<b>不再切回</b>，充值后用 <code>/model</code> 手动切换。也可在对话里用 <code>/model opus</code> / <code>/model sonnet</code> / <code>/model haiku</code> 随时手动指定。（旧代号 pro / plus / se 仍可使用）</p>
   <div class="card">
     <div id="tiers"></div>
     <div class="row" style="margin-top:8px">
@@ -108,9 +108,9 @@ export const CONFIG_UI_PAGE = `<!DOCTYPE html>
 <div class="toast" id="toast"></div>
 <script>
 const CALL_TIERS = [
-  { key:'pro',  name:'pro',  desc:'主档位 · 默认主循环；请求失败自动降级到 plus' },
-  { key:'plus', name:'plus', desc:'第二档 · pro 失败时的顺位目标，完成一轮后换回 pro' },
-  { key:'se',   name:'se',   desc:'兜底档 · plus 失败时的顺位目标，不再自动降级' }
+  { key:'opus',   name:'opus',   desc:'主档位 · 默认主循环；请求失败自动降级到 sonnet' },
+  { key:'sonnet', name:'sonnet', desc:'第二档 · opus 失败时的顺位目标，完成一轮后换回 opus' },
+  { key:'haiku',  name:'haiku',  desc:'兜底档 · sonnet 失败时的顺位目标，不再自动降级' }
 ]
 // 辅助能力槽位：与对话档位分开。作图 ≠ 视觉——很多提供商（如商汤 u1）
 // 只支持 /images/generations 生成，没有图片理解能力；反过来 GPT-4o 类

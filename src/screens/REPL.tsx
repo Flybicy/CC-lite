@@ -215,6 +215,10 @@ import { diagnosticTracker } from '../services/diagnosticTracking.js';
 import { handleSpeculationAccept, type ActiveSpeculationState } from '../services/PromptSuggestion/speculation.js';
 // import { IdeOnboardingDialog } from '../components/IdeOnboardingDialog.js'; // stripped
 import { EffortCallout, shouldShowEffortCallout } from '../components/EffortCallout.js';
+import { Select } from '../components/CustomSelect/index.js';
+import { getModelOptions } from '../utils/model/modelOptions.js';
+import { MODEL_TIERS } from '../utils/providers/providerRegistry.js';
+import { PermissionDialog } from '../components/permissions/PermissionDialog.js';
 import type { EffortValue } from '../utils/effort.js';
 import { RemoteCallout } from '../components/RemoteCallout.js';
 /* eslint-disable custom-rules/no-process-env-top-level, @typescript-eslint/no-require-imports */
@@ -744,6 +748,7 @@ export function REPL({
     return false;
   });
   const [showEffortCallout, setShowEffortCallout] = useState(() => shouldShowEffortCallout(mainLoopModel));
+  const [showUnknownApiErrorSwitch, setShowUnknownApiErrorSwitch] = useState(false);
   const showRemoteCallout = useAppState(s => s.showRemoteCallout);
   // Desktop upsell removed (Claude Desktop app stripped)
   // notifications
@@ -2041,7 +2046,7 @@ export function REPL({
   // Permission and interactive dialogs can show even when toolJSX is set,
   // as long as shouldContinueAnimation is true. This prevents deadlocks when
   // agents set background hints while waiting for user interaction.
-  function getFocusedInputDialog(): 'message-selector' | 'sandbox-permission' | 'tool-permission' | 'prompt' | 'worker-sandbox-permission' | 'elicitation' | 'cost' | 'idle-return' | 'init-onboarding' | 'ide-onboarding' | 'model-switch' | 'undercover-callout' | 'effort-callout' | 'remote-callout' | 'lsp-recommendation' | 'plugin-hint' | 'ultraplan-choice' | 'ultraplan-launch' | undefined {
+  function getFocusedInputDialog(): 'message-selector' | 'sandbox-permission' | 'tool-permission' | 'prompt' | 'worker-sandbox-permission' | 'elicitation' | 'cost' | 'idle-return' | 'init-onboarding' | 'ide-onboarding' | 'model-switch' | 'undercover-callout' | 'effort-callout' | 'api-error-switch' | 'remote-callout' | 'lsp-recommendation' | 'plugin-hint' | 'ultraplan-choice' | 'ultraplan-launch' | undefined {
     // Exit states always take precedence
     if (isExiting || exitFlow) return undefined;
 
@@ -2075,6 +2080,9 @@ export function REPL({
 
     // Effort callout (shown once for Opus 4.6 users when effort is enabled)
     if (allowDialogsWithAnimation && showEffortCallout) return 'effort-callout';
+
+    // Offer to switch models after an unknown provider/API error
+    if (allowDialogsWithAnimation && !isLoading && showUnknownApiErrorSwitch) return 'api-error-switch';
 
     // Remote callout (shown once before first bridge enable)
     if (allowDialogsWithAnimation && showRemoteCallout) return 'remote-callout';
@@ -2653,6 +2661,14 @@ export function REPL({
           proactiveModule?.setContextBlocked(true);
         } else if (newMessage.type === 'assistant') {
           proactiveModule?.setContextBlocked(false);
+        }
+      }
+      // CC-lite: offer a model switch when the provider rejects the request
+      // with an unrecognizable error (too frequent on flaky 3P gateways).
+      if (newMessage.type === 'assistant' && 'isApiErrorMessage' in newMessage && newMessage.isApiErrorMessage) {
+        const apiError = (newMessage as { error?: string }).error;
+        if (apiError === undefined || apiError === 'unknown') {
+          setShowUnknownApiErrorSwitch(true);
         }
       }
     }, newContent => {
@@ -4824,6 +4840,34 @@ export function REPL({
             }
           }} />}
                 {"external" === 'ant' && focusedInputDialog === 'undercover-callout' && UndercoverAutoCallout && <UndercoverAutoCallout onDone={() => setShowUndercoverCallout(false)} />}
+                {focusedInputDialog === 'api-error-switch' && <PermissionDialog title="Unknown API error">
+                  <Box flexDirection="column" paddingX={2} paddingY={1}>
+                    <Box marginBottom={1} flexDirection="column">
+                      <Text>The provider returned an unrecognized error — the current model or provider may be unavailable.</Text>
+                      <Text dimColor>Retry, or switch to one of your configured tiers. Press esc to keep the current model.</Text>
+                    </Box>
+                    <Select options={[{ value: 'retry', label: `Retry with current model (${mainLoopModel})` }, ...getModelOptions().filter(o => (MODEL_TIERS as readonly string[]).includes(String(o.value))), { value: 'dismiss', label: 'Dismiss' }]} onChange={value => {
+              setShowUnknownApiErrorSwitch(false);
+              if (value === 'retry') {
+                const lastUser = [...messagesRef.current].reverse().find(m => m.type === 'user' && typeof m.message.content === 'string');
+                if (lastUser && typeof lastUser.message.content === 'string') {
+                  skipIdleCheckRef.current = true;
+                  void onSubmitRef.current(lastUser.message.content, {
+                    setCursorOffset: () => {},
+                    clearBuffer: () => {},
+                    resetHistory: () => {}
+                  });
+                }
+              } else if (value !== 'dismiss') {
+                setAppState(prev => ({
+                  ...prev,
+                  mainLoopModel: value,
+                  mainLoopModelForSession: null
+                }));
+              }
+            }} onCancel={() => setShowUnknownApiErrorSwitch(false)} />
+                  </Box>
+                </PermissionDialog>}
                 {focusedInputDialog === 'effort-callout' && <EffortCallout model={mainLoopModel} onDone={selection => {
             setShowEffortCallout(false);
             if (selection !== 'dismiss') {

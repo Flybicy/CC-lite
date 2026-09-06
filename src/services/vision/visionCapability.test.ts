@@ -52,13 +52,13 @@ describe('tier-based vision routing', () => {
         providers: [PROVIDER],
         tiers: {
           vision: { providerId: 'v1', model: 'gpt-4o' },
-          se: { providerId: 'v1', model: 'deepseek', images: 'assist' },
+          haiku: { providerId: 'v1', model: 'deepseek', images: 'assist' },
         },
       },
       () => {
         expect(visionAssistIsActive()).toBe(true)
-        expect(tierUsesVisionAssist('se')).toBe(true)
-        expect(tierUsesVisionAssist('pro')).toBe(false)
+        expect(tierUsesVisionAssist('haiku')).toBe(true)
+        expect(tierUsesVisionAssist('opus')).toBe(false)
       },
     )
   })

@@ -14,6 +14,7 @@ import {
   scopeForQuerySource,
   tierForQuerySource,
   type ProviderConfig,
+  type ModelTier,
 } from './providerRegistry.js'
 
 let dir: string
@@ -54,8 +55,8 @@ const SAMPLE: ProviderConfig = {
     },
   ],
   tiers: {
-    pro: { providerId: 'openai-main', model: 'gpt-4o' },
-    se: { providerId: 'local-lm', model: 'qwen2.5-7b' },
+    opus: { providerId: 'openai-main', model: 'gpt-4o' },
+    haiku: { providerId: 'local-lm', model: 'qwen2.5-7b' },
   },
 }
 
@@ -72,26 +73,26 @@ describe('providerRegistry', () => {
     expect(getProviderConfigPath()).toBe(join(dir, 'providers.json'))
     const cfg = loadProviderConfig()
     expect(cfg.providers).toHaveLength(2)
-    expect(cfg.tiers.pro?.model).toBe('gpt-4o')
+    expect(cfg.tiers.opus?.model).toBe('gpt-4o')
     expect(isProviderRoutingActive()).toBe(true)
   })
 
   it('resolves the provider bound to a tier', () => {
     saveProviderConfig(SAMPLE)
-    const pro = resolveTierProvider('pro')
-    expect(pro?.provider.id).toBe('openai-main')
-    expect(pro?.provider.apiKey).toBe('sk-main')
-    expect(pro?.model).toBe('gpt-4o')
-    expect(pro?.scope).toBe('main')
+    const opus = resolveTierProvider('opus')
+    expect(opus?.provider.id).toBe('openai-main')
+    expect(opus?.provider.apiKey).toBe('sk-main')
+    expect(opus?.model).toBe('gpt-4o')
+    expect(opus?.scope).toBe('main')
 
-    const se = resolveTierProvider('se')
-    expect(se?.provider.baseURL).toBe('http://127.0.0.1:1234/v1')
-    expect(se?.model).toBe('qwen2.5-7b')
+    const haiku = resolveTierProvider('haiku')
+    expect(haiku?.provider.baseURL).toBe('http://127.0.0.1:1234/v1')
+    expect(haiku?.model).toBe('qwen2.5-7b')
 
-    // plus has no binding
-    expect(resolveTierProvider('plus')).toBeNull()
-    expect(isTierBound('plus')).toBe(false)
-    expect(isTierBound('pro')).toBe(true)
+    // sonnet has no binding
+    expect(resolveTierProvider('sonnet')).toBeNull()
+    expect(isTierBound('sonnet')).toBe(false)
+    expect(isTierBound('opus')).toBe(true)
   })
 
   it('resolves through the legacy scope names too', () => {
@@ -117,18 +118,18 @@ describe('providerRegistry', () => {
     )
     const cfg = loadProviderConfig()
     expect(cfg.version).toBe(2)
-    expect(cfg.tiers.pro?.model).toBe('gpt-4o')
-    expect(cfg.tiers.se?.model).toBe('qwen2.5-7b')
-    expect(cfg.tiers.plus?.model).toBe('gpt-4o-mini')
+    expect(cfg.tiers.opus?.model).toBe('gpt-4o')
+    expect(cfg.tiers.haiku?.model).toBe('qwen2.5-7b')
+    expect(cfg.tiers.sonnet?.model).toBe('gpt-4o-mini')
   })
 
   it('returns null when a tier points at a missing provider', () => {
     saveProviderConfig({
       version: 2,
       providers: [],
-      tiers: { pro: { providerId: 'ghost', model: 'x' } },
+      tiers: { opus: { providerId: 'ghost', model: 'x' } },
     })
-    expect(resolveTierProvider('pro')).toBeNull()
+    expect(resolveTierProvider('opus')).toBeNull()
     expect(isProviderRoutingActive()).toBe(false)
   })
 
@@ -139,10 +140,10 @@ describe('providerRegistry', () => {
   })
 
   it('maps query sources to tiers and legacy scopes', () => {
-    expect(tierForQuerySource('advisor')).toBe('pro')
-    expect(tierForQuerySource('agent:custom')).toBe('se')
-    expect(tierForQuerySource('repl_main_thread')).toBe('pro')
-    expect(tierForQuerySource(undefined)).toBe('pro')
+    expect(tierForQuerySource('advisor')).toBe('opus')
+    expect(tierForQuerySource('agent:custom')).toBe('haiku')
+    expect(tierForQuerySource('repl_main_thread')).toBe('opus')
+    expect(tierForQuerySource(undefined)).toBe('opus')
 
     expect(scopeForQuerySource('advisor')).toBe('main')
     expect(scopeForQuerySource('agent:custom')).toBe('subagent')
@@ -152,12 +153,12 @@ describe('providerRegistry', () => {
 
   it('picks up external edits via cache invalidation (hot reload)', () => {
     saveProviderConfig(SAMPLE)
-    expect(loadProviderConfig().tiers.pro?.model).toBe('gpt-4o')
+    expect(loadProviderConfig().tiers.opus?.model).toBe('gpt-4o')
     // simulate an external writer (the WebUI) replacing the file
     const next: ProviderConfig = {
       ...SAMPLE,
       providers: [SAMPLE.providers[0]],
-      tiers: { pro: { providerId: 'openai-main', model: 'gpt-4o-mini' } },
+      tiers: { opus: { providerId: 'openai-main', model: 'gpt-4o-mini' } },
     }
     writeFileSync(join(dir, 'providers.json'), JSON.stringify(next), 'utf8')
     // ensure the identity key changes even on coarse mtime clocks
@@ -165,7 +166,7 @@ describe('providerRegistry', () => {
     utimesSync(join(dir, 'providers.json'), later, later)
     const cfg = loadProviderConfig()
     expect(cfg.providers).toHaveLength(1)
-    expect(cfg.tiers.pro?.model).toBe('gpt-4o-mini')
-    expect(resolveTierProvider('pro')?.model).toBe('gpt-4o-mini')
+    expect(cfg.tiers.opus?.model).toBe('gpt-4o-mini')
+    expect(resolveTierProvider('opus')?.model).toBe('gpt-4o-mini')
   })
 })

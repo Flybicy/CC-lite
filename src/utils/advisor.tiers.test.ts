@@ -22,8 +22,8 @@ beforeEach(() => {
       { id: "q", label: "Q", type: "anthropic", baseURL: "https://q.example.com", apiKey: "", models: [] },
     ],
     tiers: {
-      pro: { providerId: "p", model: "m-pro" },
-      plus: { providerId: "q", model: "m-plus" },
+      opus: { providerId: "p", model: "m-opus" },
+      sonnet: { providerId: "q", model: "m-sonnet" },
     },
   })
   resetProviderConfigCacheForTests()
@@ -37,30 +37,30 @@ afterEach(() => {
 })
 
 describe('getSessionAdvisorModel', () => {
-  it('manual switch (chain rebased: home === current, not sticky) keeps pro', () => {
+  it('manual switch (chain rebased: home === current, not sticky) keeps opus', () => {
     expect(
-      getSessionAdvisorModel({ ccLiteTierHome: 'plus', ccLiteTierCurrent: 'plus' }),
-    ).toBe('pro')
+      getSessionAdvisorModel({ ccLiteTierHome: 'sonnet', ccLiteTierCurrent: 'sonnet' }),
+    ).toBe('opus')
   })
 
   it('transient failover (current !== home) follows the degraded tier', () => {
     expect(
-      getSessionAdvisorModel({ ccLiteTierHome: 'pro', ccLiteTierCurrent: 'plus' }),
-    ).toBe('plus')
+      getSessionAdvisorModel({ ccLiteTierHome: 'opus', ccLiteTierCurrent: 'sonnet' }),
+    ).toBe('sonnet')
   })
 
   it('sticky balance downgrade follows the tier the main loop is on', () => {
     expect(
       getSessionAdvisorModel({
-        ccLiteTierHome: 'plus',
-        ccLiteTierCurrent: 'plus',
+        ccLiteTierHome: 'sonnet',
+        ccLiteTierCurrent: 'sonnet',
         ccLiteTierSticky: true,
       }),
-    ).toBe('plus')
+    ).toBe('sonnet')
   })
 
-  it('no session info falls back to the default (pro)', () => {
-    expect(getSessionAdvisorModel(undefined)).toBe('pro')
-    expect(getSessionAdvisorModel({})).toBe('pro')
+  it('no session info falls back to the default (opus)', () => {
+    expect(getSessionAdvisorModel(undefined)).toBe('opus')
+    expect(getSessionAdvisorModel({})).toBe('opus')
   })
 })

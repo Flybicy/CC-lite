@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// Regression tests: tier fallback (pro→plus→se) must swap the WHOLE provider
+// Regression tests: tier fallback (opus→sonnet→haiku) must swap the WHOLE provider
 // connection — baseURL + apiKey + per-provider headers — not just the model
 // string. Also pins down the OpenAI-shim transport selection rules that apply
 // to WebUI-configured ("openai 兼容") providers.
@@ -55,9 +55,9 @@ const config: ProviderConfig = {
     },
   ],
   tiers: {
-    pro: { providerId: 'relay-a', model: 'm-a' },
-    plus: { providerId: 'relay-b', model: 'm-b' },
-    se: { providerId: 'relay-a2', model: 'm-a' },
+    opus: { providerId: 'relay-a', model: 'm-a' },
+    sonnet: { providerId: 'relay-b', model: 'm-b' },
+    haiku: { providerId: 'relay-a2', model: 'm-a' },
   },
 }
 saveProviderConfig(config)
@@ -100,32 +100,32 @@ function lastCapture(): Captured {
 
 describe('tier fallback swaps the provider connection, not just the model', () => {
   test('chain targets resolve to different providers', () => {
-    const pro = resolveTierConnectionByTier('pro')
-    const plus = resolveTierConnectionByTier('plus')
-    expect(pro.source).toBe('routing')
-    expect(plus.source).toBe('routing')
-    if (pro.source !== 'routing' || plus.source !== 'routing') return
+    const opus = resolveTierConnectionByTier('opus')
+    const sonnet = resolveTierConnectionByTier('sonnet')
+    expect(opus.source).toBe('routing')
+    expect(sonnet.source).toBe('routing')
+    if (opus.source !== 'routing' || sonnet.source !== 'routing') return
     // Different baseURL AND apiKey AND headers — i.e. a real provider hop.
-    expect(pro.baseURL).not.toBe(plus.baseURL)
-    expect(pro.apiKey).not.toBe(plus.apiKey)
-    expect(pro.headers).toEqual({ 'User-Agent': 'agent-a/1' })
-    expect(plus.headers).toEqual({ 'x-app': 'b-app' })
+    expect(opus.baseURL).not.toBe(sonnet.baseURL)
+    expect(opus.apiKey).not.toBe(sonnet.apiKey)
+    expect(opus.headers).toEqual({ 'User-Agent': 'agent-a/1' })
+    expect(sonnet.headers).toEqual({ 'x-app': 'b-app' })
   })
 
-  test('se bound identically to pro → identical connection (no-op hop premise)', () => {
-    const pro = resolveTierConnectionByTier('pro')
-    const se = resolveTierConnectionByTier('se')
-    if (pro.source !== 'routing' || se.source !== 'routing') return
-    expect(se.baseURL).toBe(pro.baseURL)
-    expect(se.apiKey).toBe(pro.apiKey)
-    expect(se.model).toBe(pro.model)
+  test('haiku bound identically to opus → identical connection (no-op hop premise)', () => {
+    const opus = resolveTierConnectionByTier('opus')
+    const haiku = resolveTierConnectionByTier('haiku')
+    if (opus.source !== 'routing' || haiku.source !== 'routing') return
+    expect(haiku.baseURL).toBe(opus.baseURL)
+    expect(haiku.apiKey).toBe(opus.apiKey)
+    expect(haiku.model).toBe(opus.model)
   })
 
   test('request follows the switched tier end-to-end (baseURL + key + headers)', async () => {
-    // "pro" request → Relay A, openai shim, provider headers applied.
+    // "opus" request → Relay A, openai shim, provider headers applied.
     const proClient = (await getAnthropicClient({
       maxRetries: 0,
-      tierOverride: 'pro',
+      tierOverride: 'opus',
     })) as unknown as {
       beta: { messages: { create: (p: unknown) => Promise<unknown> } }
     }
@@ -140,10 +140,10 @@ describe('tier fallback swaps the provider connection, not just the model', () =
     expect(proReq.headers['authorization']).toBe('Bearer key-a')
     expect(proReq.headers['user-agent']).toBe('agent-a/1')
 
-    // Simulated fallback hop → "plus": SAME call site, different provider.
+    // Simulated fallback hop → "sonnet": SAME call site, different provider.
     const plusClient = (await getAnthropicClient({
       maxRetries: 0,
-      tierOverride: 'plus',
+      tierOverride: 'sonnet',
     })) as unknown as {
       beta: { messages: { create: (p: unknown) => Promise<unknown> } }
     }
@@ -216,7 +216,7 @@ describe('openai-compatible transport selection (WebUI providers)', () => {
       process.env.OPENAI_API_MODE = 'responses'
       const client = (await getAnthropicClient({
         maxRetries: 0,
-        tierOverride: 'pro',
+        tierOverride: 'opus',
       })) as unknown as {
         beta: { messages: { create: (p: unknown) => Promise<unknown> } }
       }

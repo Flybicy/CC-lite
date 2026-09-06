@@ -54,35 +54,41 @@ export type ProviderType = 'openai' | 'anthropic'
 export type ProviderApiMode = 'auto' | 'chat_completions' | 'responses'
 
 /** Public call codenames. This is what the rest of the codebase references. */
-export type ModelTier = 'pro' | 'plus' | 'se'
+export type ModelTier = 'opus' | 'sonnet' | 'haiku'
+
+/** Case-insensitive tier lookup — '/model OPUS' etc. */
+export function normalizeTierName(value: string): ModelTier | undefined {
+  const key = value.trim().toLowerCase()
+  return (MODEL_TIERS as readonly string[]).includes(key) ? (key as ModelTier) : undefined
+}
 
 /** Legacy internal name for the same three slots. Kept for call-site compat. */
 export type ModelScope = 'main' | 'subagent' | 'advisor'
 
-export const MODEL_TIERS: readonly ModelTier[] = ['pro', 'plus', 'se'] as const
+export const MODEL_TIERS: readonly ModelTier[] = ['opus', 'sonnet', 'haiku'] as const
 
 export const SCOPE_TO_TIER: Record<ModelScope, ModelTier> = {
-  main: 'pro',
-  advisor: 'plus',
-  subagent: 'se',
+  main: 'opus',
+  advisor: 'sonnet',
+  subagent: 'haiku',
 }
 
 export const TIER_TO_SCOPE: Record<ModelTier, ModelScope> = {
-  pro: 'main',
-  plus: 'advisor',
-  se: 'subagent',
+  opus: 'main',
+  sonnet: 'advisor',
+  haiku: 'subagent',
 }
 
 /** Human-facing blurbs, shared by the WebUI and the TUI. */
 export const TIER_LABELS: Record<ModelTier, { title: string; hint: string }> = {
-  pro: { title: 'pro', hint: '主档位 · 默认主循环，失败自动降级到 plus' },
-  plus: { title: 'plus', hint: '第二档 · pro 失败时的顺位目标' },
-  se: { title: 'se', hint: '兜底档 · plus 失败时的顺位目标' },
+  opus: { title: 'opus', hint: '主档位 · 默认主循环，失败自动降级到 sonnet' },
+  sonnet: { title: 'sonnet', hint: '第二档 · opus 失败时的顺位目标' },
+  haiku: { title: 'haiku', hint: '兜底档 · sonnet 失败时的顺位目标' },
 }
 
 export function isModelTier(value: unknown): value is ModelTier {
   return (
-    typeof value === 'string' && (MODEL_TIERS as readonly string[]).includes(value)
+    typeof value === 'string' && normalizeTierName(value) !== undefined
   )
 }
 
@@ -121,9 +127,9 @@ export const RoutingEntrySchema = TierBindingSchema
 
 export const TierMapSchema = z
   .object({
-    pro: TierBindingSchema.optional(),
-    plus: TierBindingSchema.optional(),
-    se: TierBindingSchema.optional(),
+    opus: TierBindingSchema.optional(),
+    sonnet: TierBindingSchema.optional(),
+    haiku: TierBindingSchema.optional(),
     // Not a call tier: vision fallback. When the main-loop model is
     // text-only, ViewImage routes image understanding here so the model
     // still gets "eyes".
@@ -198,6 +204,7 @@ function parseConfig(raw: unknown): ProviderConfig {
     }
     return ProviderConfigSchema.parse({ ...rest, tiers })
   }
+
   return ProviderConfigSchema.parse(rest)
 }
 
@@ -271,11 +278,14 @@ export function resolveTierProvider(
   cfg: ProviderConfig = loadProviderConfig(),
 ): ResolvedTierProvider | null {
   // '/model PLUS' etc. — normalize free-form input to the lowercase row.
-  const binding = cfg.tiers?.[tier.trim().toLowerCase() as ModelTier]
+  const normalized = normalizeTierName(tier)
+  if (!normalized) return null
+  const binding = cfg.tiers?.[normalized]
   if (!binding) return null
   const provider = cfg.providers.find(p => p.id === binding.providerId)
   if (!provider) return null
-  return { tier, scope: TIER_TO_SCOPE[tier], provider, model: getTierModelOverride(tier) ?? binding.model, contextWindow: binding.contextWindow, images: binding.images ?? undefined }
+  return { tier: normalized, scope: TIER_TO_SCOPE[normalized], provider, model: getTierModelOverride(normalized) ?? binding.model, contextWindow: binding.contextWindow, images: binding.images ?? undefined }
+  // ^ normalized legacy names (pro/plus/se) land on the current tier keys.
 }
 
 /** Resolved aux-slot binding (vision provider). */
@@ -311,13 +321,13 @@ export function isTierBound(tier: ModelTier): boolean {
 
 /** Map a querySource string to the tier that should serve it. */
 export function tierForQuerySource(source: string | undefined): ModelTier {
-  if (!source) return 'pro'
+  if (!source) return 'opus'
   // The Advisor follows the main loop: same provider, same model, same
   // failover chain. Reviewing advice is only as good as the model giving it,
   // and advisor calls are rare enough that sharing pro costs little.
-  if (source === 'advisor') return 'pro'
-  if (source.startsWith('agent:')) return 'se'
-  return 'pro'
+  if (source === 'advisor') return 'opus'
+  if (source.startsWith('agent:')) return 'haiku'
+  return 'opus'
 }
 
 /** Map a querySource string to the legacy scope name it belongs to. */

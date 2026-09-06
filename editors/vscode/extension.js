@@ -338,8 +338,8 @@ class ChatViewProvider {
     this.context = context;
     this.view = null;
     this.session = null;
-    this.tier = 'pro';
-    this.effort = 'auto';
+    this.tier = 'opus';
+    this.effort = 'high';
     this.busy = false;
     this.pendingAssistant = '';
     this.transcript = []; // { role: 'user'|'assistant', text }
@@ -700,20 +700,20 @@ function renderHtml(cspSource) {
       </div>
       <button class="pill" id="modeBtn" title="权限模式">🛡 mode</button>
       <div id="drawerWrap">
-        <button class="pill" id="drawerBtn" title="模型与思考">pro · auto</button>
+        <button class="pill" id="drawerBtn" title="模型与思考">opus · high</button>
         <div id="drawer" hidden>
           <div class="drawer-title">模型</div>
           <select id="tier">
-            <option value="pro">pro（主档 · 失败自动降级）</option>
-            <option value="plus">plus（第二档）</option>
-            <option value="se">se（兜底档）</option>
+            <option value="opus">opus（主档 · 失败自动降级）</option>
+            <option value="sonnet">sonnet（第二档）</option>
+            <option value="haiku">haiku（兜底档）</option>
           </select>
           <div class="drawer-title">思考等级</div>
           <select id="effort">
             <option value="auto">Auto（模型默认）</option>
             <option value="low">Low</option>
             <option value="medium">Medium</option>
-            <option value="high">High</option>
+            <option value="high" selected>High</option>
             <option value="max">Max</option>
           </select>
           <button id="webui" class="pill wide">⚙ 打开 WebUI 配置供应商</button>

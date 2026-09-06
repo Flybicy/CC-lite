@@ -83,16 +83,16 @@ function ShowAllProfiles({
     lines.push(`  (overridden for this session: ${chalk.bold(renderModelLabel(mainLoopModelForSession))})`)
   }
   // CC-lite tiers: always list all three codenames and the concrete model each
-  // one resolves to right now, so users can see what /model pro would call.
+  // one resolves to right now, so users can see what /model opus would call.
   // Unbound tiers say "unbound" instead of the old "default · auto · auto".
   lines.push('')
-  lines.push(chalk.bold('Tiers (pro / plus / se):'))
+  lines.push(chalk.bold('Tiers (opus / sonnet / haiku):'))
   for (const tier of MODEL_TIERS) {
     lines.push(`  ${formatTierLine(tier)}`)
   }
-  lines.push('  失败后自动顺次降级 pro → plus → se；余额不足降为粘性（不自动切回）')
+  lines.push('  失败后自动顺次降级 opus -> sonnet -> haiku；余额不足降为粘性（不自动切回）')
   lines.push('')
-  lines.push(`Configure tiers with ${chalk.bold('ccliteweb')} (opens the WebUI). Run ${chalk.bold('/model <pro|plus|se>')} to switch, or ${chalk.bold('/model [model-id]')} for a specific model.`)
+  lines.push(`Configure tiers with ${chalk.bold('ccliteweb')} (opens the WebUI). Run ${chalk.bold('/model <opus|sonnet|haiku>')} to switch, or ${chalk.bold('/model [model-id]')} for a specific model.`)
   onDone(lines.join('\n'))
   return null
 }

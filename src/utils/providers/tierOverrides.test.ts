@@ -41,7 +41,7 @@ const CFG: ProviderConfig = {
     },
   ],
   tiers: {
-    pro: { providerId: 'gw', model: 'm1' },
+    opus: { providerId: 'gw', model: 'm1' },
   },
 }
 
@@ -50,14 +50,14 @@ describe('tier model overrides', () => {
 
   test('unset → binding model', () => {
     pin(CFG, () => {
-      expect(resolveTierConnectionByTier('pro')).toMatchObject({ model: 'm1' })
+      expect(resolveTierConnectionByTier('opus')).toMatchObject({ model: 'm1' })
     })
   })
 
-  test('/model glm-5.3 while on pro → same provider, model glm-5.3', () => {
+  test('/model glm-5.3 while on opus → same provider, model glm-5.3', () => {
     pin(CFG, () => {
-      setTierModelOverride('pro', 'glm-5.3')
-      const c = resolveTierConnectionByTier('pro')
+      setTierModelOverride('opus', 'glm-5.3')
+      const c = resolveTierConnectionByTier('opus')
       expect(c.source).toBe('routing')
       if (c.source === 'routing') {
         expect(c.model).toBe('glm-5.3')
@@ -68,9 +68,9 @@ describe('tier model overrides', () => {
 
   test('clear resets', () => {
     pin(CFG, () => {
-      setTierModelOverride('pro', 'glm-5.3')
-      clearTierModelOverride('pro')
-      expect(resolveTierConnectionByTier('pro')).toMatchObject({ model: 'm1' })
+      setTierModelOverride('opus', 'glm-5.3')
+      clearTierModelOverride('opus')
+      expect(resolveTierConnectionByTier('opus')).toMatchObject({ model: 'm1' })
     })
   })
 })

@@ -9,13 +9,13 @@
 // that setting.
 // ---------------------------------------------------------------------------
 
-import { loadProviderConfig } from '../../utils/providers/providerRegistry.js'
+import { MODEL_TIERS, loadProviderConfig, type ModelTier } from '../../utils/providers/providerRegistry.js'
 
 /** All tier codenames that route image-bearing turns through the vision slot. */
 export function tiersUsingVisionAssist(): string[] {
   const cfg = loadProviderConfig()
   const out: string[] = []
-  for (const tier of ['pro', 'plus', 'se'] as const) {
+  for (const tier of MODEL_TIERS) {
     const b = cfg.tiers?.[tier]
     if (b && b.images === 'assist') out.push(tier)
   }
@@ -29,12 +29,12 @@ export function tiersUsingVisionAssist(): string[] {
 export function visionAssistIsActive(): boolean {
   const cfg = loadProviderConfig()
   if (!cfg.tiers?.vision) return false
-  return ['pro', 'plus', 'se'].some(t => cfg.tiers?.[t]?.images === 'assist')
+  return MODEL_TIERS.some(t => cfg.tiers?.[t]?.images === 'assist')
 }
 
 /** Does the given tier route images through the vision provider? */
 export function tierUsesVisionAssist(
-  tier: 'pro' | 'plus' | 'se',
+  tier: ModelTier,
 ): boolean {
   return loadProviderConfig().tiers?.[tier]?.images === 'assist'
 }

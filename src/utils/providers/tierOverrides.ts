@@ -3,12 +3,12 @@
 //
 // `/model glm-5.3` (a concrete model id) does NOT switch providers; it pins
 // that model on the CURRENT tier for this session — the provider, apiKey and
-// headers stay whatever the tier binding says. `/model pro|plus|se` still
+// headers stay whatever the tier binding says. `/model opus|sonnet|haiku` still
 // switches the tier whole. Overrides live in memory only: restarting cclite
 // clears them, which keeps providers.json pristine.
 // ---------------------------------------------------------------------------
 
-import type { ModelTier } from './providerRegistry.js'
+import { normalizeTierName, type ModelTier } from './providerRegistry.js'
 
 const overrides = new Map<ModelTier, string>()
 

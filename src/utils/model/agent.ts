@@ -18,13 +18,13 @@ export type AgentModelOption = {
 }
 
 /**
- * Get the default subagent model. Prefers the `se` tier codename when it is
+ * Get the default subagent model. Prefers the `haiku` tier codename when it is
  * bound in providers.json (resolved per call, so WebUI edits apply without a
  * restart), then modelProfiles.subagent.model, otherwise 'inherit' (use the
  * parent thread's model).
  */
 export function getDefaultSubagentModel(): string {
-  if (isTierBound('se')) return 'se'
+  if (isTierBound('haiku')) return 'haiku'
   return resolveModelProfileModel('subagent') ?? 'inherit'
 }
 

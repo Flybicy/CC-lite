@@ -98,7 +98,8 @@ export function toPersistableEffort(
 
 export function getInitialEffortSetting(): EffortLevel | undefined {
   const profile = resolveModelProfileEffort('main')
-  return (profile || undefined) as EffortLevel | undefined
+  // CC-lite: provider feeds are noisy — default to 'high' instead of 'auto'.
+  return (profile || 'high') as EffortLevel
 }
 
 export function resolvePickerEffortPersistence(
@@ -289,5 +290,6 @@ export function getDefaultEffortForModel(
   if (isUltrathinkEnabled() && modelSupportsEffort(model)) {
     return 'medium'
   }
-  return undefined
+  // CC-lite: fall back to 'high' so 'auto' never silently downgrades effort.
+  return 'high'
 }

@@ -78,7 +78,7 @@ export function getUserSpecifiedModelSetting(): ModelSetting | undefined {
     specifiedModel =
       process.env.ANTHROPIC_MODEL ||
       process.env.OPENAI_MODEL ||
-      (isTierBound('pro') ? 'pro' : undefined) ||
+      (isTierBound('opus') ? 'opus' : undefined) ||
       resolveModelProfileModel('main') ||
       undefined
   }
@@ -503,7 +503,7 @@ export function parseUserSpecifiedModel(
       return tierModel + (has1mTag ? '[1m]' : '')
     }
     const fallback =
-      modelString === 'se' ? getDefaultHaikuModel() : getDefaultSonnetModel()
+      modelString === 'haiku' ? getDefaultHaikuModel() : getDefaultSonnetModel()
     return fallback + (has1mTag ? '[1m]' : '')
   }
 
