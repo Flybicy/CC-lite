@@ -312,7 +312,7 @@ function NotificationContent({
   const displayUsage = tokenUsage > 0 ? tokenUsage : lastStable.current.usage;
   const footerColor = warnState.isAboveErrorThreshold ? 'error' : warnState.isAboveWarningThreshold ? 'warning' : undefined;
   const showAutoCompactNotice = autoCompactEnabled && lastStable.current.notice;
-  const contextLine = showAutoCompactNotice ? `${formatTokenCount(displayUsage)}/${formatTokenCount(displayWindow)}(Auto-compaction will occur soon)` : tokenUsage > 0 || lastStable.current.usage > 0 ? `${formatTokenCount(displayUsage)}/${formatTokenCount(displayWindow)}(${pctAvail}% available)` : formatTokenCount(displayWindow);
+  const contextLine = showAutoCompactNotice ? `${formatTokenCount(displayUsage)}/${formatTokenCount(displayWindow)}(Auto-compaction will occur soon)` : tokenUsage > 0 || lastStable.current.usage > 0 ? `${formatTokenCount(displayUsage)}/${formatTokenCount(displayWindow)}(${pctAvail}% available)` : `0/${formatTokenCount(displayWindow)}`;
 
   // When voice is actively recording or processing, replace all
   // notifications with just the voice indicator.
@@ -367,7 +367,6 @@ function NotificationContent({
             <Text dimColor={!footerColor} color={footerColor}>
               {contextLine}
             </Text>
-            <Text dimColor>{` · ${renderModelSetting(mainLoopModel)} · ${effortValue ?? 'auto'}`}</Text>
           </Text>
         </Box>
     </>;

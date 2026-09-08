@@ -41,9 +41,11 @@ export function setCachedSystemTheme(theme: SystemTheme): void {
  */
 export function resolveThemeSetting(setting: ThemeSetting): ThemeName {
   if (setting === 'auto') {
-    return getSystemThemeName()
+    const system = getSystemThemeName()
+    return system === 'dark' ? 'groknight' : system
   }
-  return setting
+  // grok-build fork: dark mode defaults to the groknight palette.
+  return setting === 'dark' ? 'groknight' : setting
 }
 
 /**

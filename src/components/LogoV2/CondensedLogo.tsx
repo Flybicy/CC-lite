@@ -79,10 +79,10 @@ export function CondensedLogo() {
   const advisorModel = getAdvisorModelFromProfiles(_settings?.modelProfiles);
   const advisorEffort = advisorModel ? resolveAppliedEffort(advisorModel, undefined, 'advisor') : undefined;
   const advisorEffortSuffix = advisorEffort !== undefined ? `(${String(advisorEffort)})` : '';
-  const displayName =
-    advisorModel && advisorModel !== model
-      ? `${modelDisplayName}${effortSuffix} · ${advisorModel}${advisorEffortSuffix}`
-      : `${modelDisplayName}${effortSuffix}`;
+  // grok fork: model + effort live in the prompt border, not the logo —
+  // the logo line only keeps the billing/context segment.
+  const displayName = '';
+  void modelDisplayName;
   const {
     shouldSplit,
     truncatedModel,
@@ -114,7 +114,7 @@ export function CondensedLogo() {
   }
   let t7;
   if ($[11] !== shouldSplit || $[12] !== truncatedBilling || $[13] !== truncatedModel) {
-    t7 = shouldSplit ? <><Text dimColor={true}>{truncatedModel}</Text><Text dimColor={true}>{truncatedBilling}</Text></> : <Text dimColor={true}>{truncatedModel} · {truncatedBilling}</Text>;
+    t7 = truncatedModel === '' ? <Text dimColor={true}>{truncatedBilling}</Text> : shouldSplit ? <><Text dimColor={true}>{truncatedModel}</Text><Text dimColor={true}>{truncatedBilling}</Text></> : <Text dimColor={true}>{truncatedModel} · {truncatedBilling}</Text>;
     $[11] = shouldSplit;
     $[12] = truncatedBilling;
     $[13] = truncatedModel;

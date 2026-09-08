@@ -90,6 +90,7 @@ export type Theme = {
 }
 
 export const THEME_NAMES = [
+  'groknight',
   'dark',
   'light',
   'light-daltonized',
@@ -602,8 +603,74 @@ const darkDaltonizedTheme: Theme = {
   rainbow_violet_shimmer: 'rgb(230,180,210)',
 }
 
+/**
+ * GrokNight theme (grok-build inspired): neutral near-black gray ramps with
+ * TokyoNight Night accents. Assistant = magenta, system = blue, success =
+ * green, error = soft red. Derived from grok-build's groknight palette.
+ */
+const groknightTheme: Theme = {
+  ...darkTheme,
+  autoAccept: 'rgb(157,124,216)' /* purple */,
+  bashBorder: 'rgb(255,158,100)' /* orange */,
+  claude: 'rgb(187,154,247)' /* magenta — assistant accent */,
+  startupAccent: 'rgb(26,188,156)' /* teal, grok accent_model */,
+  claudeShimmer: 'rgb(211,176,251)',
+  claudeBlue_FOR_SYSTEM_SPINNER: 'rgb(122,162,247)' /* blue */,
+  claudeBlueShimmer_FOR_SYSTEM_SPINNER: 'rgb(163,191,250)',
+  permission: 'rgb(122,162,247)',
+  permissionShimmer: 'rgb(156,188,250)',
+  planMode: 'rgb(255,219,141)' /* golden, grok accent_plan */,
+  ide: 'rgb(122,162,247)',
+  promptBorder: 'rgb(50,50,55)',
+  promptBorderShimmer: 'rgb(80,80,88)',
+  text: 'rgb(225,225,225)',
+  inverseText: 'rgb(10,10,10)',
+  inactive: 'rgb(120,120,120)',
+  inactiveShimmer: 'rgb(168,168,168)',
+  subtle: 'rgb(65,65,65)',
+  suggestion: 'rgb(122,162,247)',
+  remember: 'rgb(139,195,74)' /* grok accent_remember */,
+  background: 'rgb(26,188,156)' /* teal */,
+  success: 'rgb(158,206,106)' /* green */,
+  error: 'rgb(247,118,142)' /* soft red */,
+  warning: 'rgb(224,175,104)' /* yellow */,
+  warningShimmer: 'rgb(240,200,148)',
+  diffAdded: 'rgb(6,56,6)',
+  diffRemoved: 'rgb(66,14,20)',
+  diffAddedDimmed: 'rgb(90,106,90)',
+  diffRemovedDimmed: 'rgb(106,74,80)',
+  diffAddedWord: 'rgb(158,206,106)',
+  diffRemovedWord: 'rgb(247,118,142)',
+  red_FOR_SUBAGENTS_ONLY: 'rgb(247,118,142)',
+  blue_FOR_SUBAGENTS_ONLY: 'rgb(122,162,247)',
+  green_FOR_SUBAGENTS_ONLY: 'rgb(158,206,106)',
+  yellow_FOR_SUBAGENTS_ONLY: 'rgb(224,175,104)',
+  purple_FOR_SUBAGENTS_ONLY: 'rgb(187,154,247)',
+  orange_FOR_SUBAGENTS_ONLY: 'rgb(255,158,100)',
+  pink_FOR_SUBAGENTS_ONLY: 'rgb(255,122,147)',
+  cyan_FOR_SUBAGENTS_ONLY: 'rgb(125,207,255)',
+  professionalBlue: 'rgb(122,162,247)',
+  chromeYellow: 'rgb(224,175,104)',
+  clawd_body: 'rgb(125,207,255)',
+  clawd_background: 'rgb(10,10,10)',
+  userMessageBackground: 'rgb(36,36,36)',
+  userMessageBackgroundHover: 'rgb(46,46,46)',
+  messageActionsBackground: 'rgb(44,44,44)',
+  selectionBg: 'rgb(54,54,54)',
+  bashMessageBackgroundColor: 'rgb(34,34,34)',
+  memoryBackgroundColor: 'rgb(35,40,48)',
+  rate_limit_fill: 'rgb(122,162,247)',
+  rate_limit_empty: 'rgb(36,36,36)',
+  fastMode: 'rgb(255,158,100)',
+  fastModeShimmer: 'rgb(255,185,138)',
+  briefLabelYou: 'rgb(125,207,255)',
+  briefLabelClaude: 'rgb(187,154,247)',
+}
+
 export function getTheme(themeName: ThemeName): Theme {
   switch (themeName) {
+    case 'groknight':
+      return groknightTheme
     case 'light':
       return lightTheme
     case 'light-ansi':
