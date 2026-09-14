@@ -111,6 +111,7 @@ import thinkback from './commands/thinkback/index.js'
 import thinkbackPlay from './commands/thinkback-play/index.js'
 import permissions from './commands/permissions/index.js'
 import plan from './commands/plan/index.js'
+import goal from './commands/goal/index.js'
 // fast mode removed
 // privacy-settings removed (Anthropic online service)
 import hooks from './commands/hooks/index.js'
@@ -290,6 +291,7 @@ const COMMANDS = memoize((): Command[] => [
   thinkbackPlay,
   permissions,
   plan,
+  goal,
   // privacySettings removed
   hooks,
   exportCommand,

@@ -56,6 +56,7 @@ import {
   stripSignatureBlocks,
 } from './utils/messages.js'
 import { generateToolUseSummary } from './services/toolUseSummary/toolUseSummaryGenerator.js'
+import { clearGoal, getGoal, GOAL_COMPLETE_MARKER, GOAL_MAX_ROUNDS, getGoalRound, incrementGoalRound, isGoalModeActive } from './utils/goalMode.js'
 import { prependUserContext, appendSystemContext } from './utils/api.js'
 import { isTierAlias } from './utils/model/aliases.js'
 import { resolveTierModel } from './utils/model/modelProfiles.js'
@@ -1485,6 +1486,36 @@ async function* queryLoop(
       // real response — hooks evaluating it create a death spiral:
       // error → hook blocking → retry → error → …
       if (lastMessage?.isApiErrorMessage) {
+        // Goal mode: retry through transient provider/API errors instead of
+        // bailing out, with a bounded backoff to avoid a tight error loop.
+        if (isGoalModeActive() && !toolUseContext.agentId) {
+          const retryRound = incrementGoalRound()
+          if (retryRound <= GOAL_MAX_ROUNDS) {
+            yield createSystemMessage(`Goal mode: API error, retrying (round ${retryRound}/${GOAL_MAX_ROUNDS})...`, 'warning')
+            await new Promise(r => setTimeout(r, Math.min(1000 * retryRound, 10000)))
+            const retryNudge = createUserMessage({
+              content: `The previous request failed with an API error. Retry now — keep working toward the goal: ${getGoal()}. If the same approach keeps failing, try a different one.`,
+              isMeta: true,
+            })
+            const nextErr: State = {
+              messages: [...messagesForQuery, retryNudge],
+              toolUseContext,
+              autoCompactTracking: tracking,
+              maxOutputTokensRecoveryCount: 0,
+              hasAttemptedReactiveCompact,
+              maxOutputTokensOverride: undefined,
+              pendingToolUseSummary: undefined,
+              stopHookActive: undefined,
+              turnCount,
+              transition: { reason: 'goal_error_retry' },
+            }
+            state = nextErr
+            continue
+          }
+          clearGoal()
+          void executeStopFailureHooks(lastMessage, toolUseContext)
+          return { reason: 'completed' }
+        }
         void executeStopFailureHooks(lastMessage, toolUseContext)
         return { reason: 'completed' }
       }
@@ -1576,6 +1607,40 @@ async function* queryLoop(
             queryChainId: queryChainIdForAnalytics,
             queryDepth: queryTracking.depth,
           })
+        }
+      }
+
+      // Goal mode: if the session goal is still active and the model did not
+      // finish with the completion marker, nudge it to keep going (bounded by
+      // GOAL_MAX_ROUNDS so a confused model cannot loop forever).
+      if (isGoalModeActive() && !toolUseContext.agentId && lastMessage?.type === 'assistant' && !lastMessage.isApiErrorMessage) {
+        const lastText = typeof lastMessage.message.content === 'string'
+          ? lastMessage.message.content
+          : lastMessage.message.content.map((block: { type: string; text?: string }) => block.type === 'text' ? (block.text ?? '') : '').join('\n')
+        if (!lastText.includes(GOAL_COMPLETE_MARKER)) {
+          const round = incrementGoalRound()
+          if (round <= GOAL_MAX_ROUNDS) {
+            const goalNudge = createUserMessage({
+              content: `[Goal mode round ${round}/${GOAL_MAX_ROUNDS}] The goal is not yet complete: ${getGoal()}. Continue working on it now — pick up where you left off. If you are blocked on something only the user can answer, say so clearly and end with the marker ${GOAL_COMPLETE_MARKER} plus a note explaining what you need.`,
+              isMeta: true,
+            })
+            const next: State = {
+              messages: [...messagesForQuery, ...assistantMessages, goalNudge],
+              toolUseContext,
+              autoCompactTracking: tracking,
+              maxOutputTokensRecoveryCount: 0,
+              hasAttemptedReactiveCompact,
+              maxOutputTokensOverride: undefined,
+              pendingToolUseSummary: undefined,
+              stopHookActive: undefined,
+              turnCount,
+              transition: { reason: 'goal_continuation' },
+            }
+            state = next
+            continue
+          }
+          clearGoal()
+          yield createSystemMessage('Goal mode stopped: continuation round limit reached. Run /goal off or set a new goal.', 'warning')
         }
       }
 
