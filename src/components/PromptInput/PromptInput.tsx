@@ -2237,7 +2237,7 @@ function PromptInput({
             </Box>
           </Box>
           <Text color={swarmBanner.bgColor}>{'─'.repeat(columns)}</Text>
-        </> : <Box flexDirection="row" alignItems="flex-start" justifyContent="flex-start" borderColor={getBorderColor()} borderStyle="round" borderLeft={false} borderRight={false} borderBottom width="100%" borderText={buildBorderText(showFastIcon ?? false, showFastIconHint, fastModeCooldown, `${modelDisplayString(mainLoopModel_)}${effortValue !== undefined ? ` (${String(effortValue)})` : ''} · ${effectiveToolPermissionContext.mode}`)}>
+        </> : <Box flexDirection="row" alignItems="flex-start" justifyContent="flex-start" borderColor={getBorderColor()} borderStyle="round" width="100%" borderText={buildBorderText(showFastIcon ?? false, showFastIconHint, fastModeCooldown, `${modelDisplayString(mainLoopModel_)}${effortValue !== undefined ? ` (${String(effortValue)})` : ''} · ${effectiveToolPermissionContext.mode}`)}>
           <PromptInputModeIndicator mode={mode} isLoading={isLoading} viewingAgentName={viewingAgentName} viewingAgentColor={viewingAgentColor} />
           <Box flexGrow={1} flexShrink={1} onClick={handleInputClick}>
             {textInputElement}
