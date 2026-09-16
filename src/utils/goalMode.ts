@@ -8,6 +8,11 @@ let goalRound = 0
 // Safety cap so a confused model cannot loop forever burning tokens.
 export const GOAL_MAX_ROUNDS = 50
 
+// Every N rounds without a completion marker, a side-call judge reviews the
+// transcript to decide whether the goal is actually done (backstop for
+// models that forget to emit the marker).
+export const GOAL_JUDGE_EVERY = 5
+
 export const GOAL_COMPLETE_MARKER = '[GOAL_COMPLETE]'
 
 export function setGoal(text: string): void {

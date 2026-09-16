@@ -56,7 +56,8 @@ import {
   stripSignatureBlocks,
 } from './utils/messages.js'
 import { generateToolUseSummary } from './services/toolUseSummary/toolUseSummaryGenerator.js'
-import { clearGoal, getGoal, GOAL_COMPLETE_MARKER, GOAL_MAX_ROUNDS, getGoalRound, incrementGoalRound, isGoalModeActive } from './utils/goalMode.js'
+import { clearGoal, getGoal, GOAL_COMPLETE_MARKER, GOAL_JUDGE_EVERY, GOAL_MAX_ROUNDS, getGoalRound, incrementGoalRound, isGoalModeActive } from './utils/goalMode.js'
+import { judgeGoalCompletion } from './utils/goalJudge.js'
 import { prependUserContext, appendSystemContext } from './utils/api.js'
 import { isTierAlias } from './utils/model/aliases.js'
 import { resolveTierModel } from './utils/model/modelProfiles.js'
@@ -1619,6 +1620,22 @@ async function* queryLoop(
           : lastMessage.message.content.map((block: { type: string; text?: string }) => block.type === 'text' ? (block.text ?? '') : '').join('\n')
         if (!lastText.includes(GOAL_COMPLETE_MARKER)) {
           const round = incrementGoalRound()
+          // Backstop judge: if the model keeps working without emitting the
+          // marker, ask a small side call every GOAL_JUDGE_EVERY rounds whether
+          // the transcript already satisfies the goal. Positive verdict stops
+          // the loop cleanly.
+          if (round % GOAL_JUDGE_EVERY === 0 && round <= GOAL_MAX_ROUNDS) {
+            try {
+              const verdict = await judgeGoalCompletion(getGoal() ?? '', lastText)
+              if (verdict.complete) {
+                clearGoal()
+                yield createSystemMessage(`Goal mode: judge says the goal is complete${verdict.reason ? ` (${verdict.reason})` : ''}; stopping auto-continue.`, 'info')
+                return { reason: 'completed' }
+              }
+            } catch {
+              // Judge call failed - keep the marker path going.
+            }
+          }
           if (round <= GOAL_MAX_ROUNDS) {
             const goalNudge = createUserMessage({
               content: `[Goal mode round ${round}/${GOAL_MAX_ROUNDS}] The goal is not yet complete: ${getGoal()}. Continue working on it now — pick up where you left off. If you are blocked on something only the user can answer, say so clearly and end with the marker ${GOAL_COMPLETE_MARKER} plus a note explaining what you need.`,
