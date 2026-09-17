@@ -42,6 +42,7 @@ import {
 } from './hedgedRequest.js'
 import { APIError } from '@anthropic-ai/sdk'
 import { isEnvTruthy } from '../../utils/envUtils.js'
+import { getSessionId } from '../../bootstrap/state.js'
 
 // ---------------------------------------------------------------------------
 // Types — minimal subset of Anthropic SDK types we need to produce
@@ -961,6 +962,13 @@ class OpenAIShimMessages {
       ...this.defaultHeaders,
       ...(options?.headers ?? {}),
     }
+
+    // Codex-style defaults for the Responses transport, mirroring the
+    // anthropic-info headers attached on the Anthropic path. Explicit
+    // user/provider headers merged above win over these.
+    headers.originator ??= 'openclaude'
+    headers['OpenAI-Beta'] ??= 'responses=experimental'
+    headers.session_id ??= getSessionId()
 
     const apiKey = this.providerOverride?.apiKey ?? process.env.OPENAI_API_KEY ?? ''
     const isAzure = /cognitiveservices\.azure\.com|openai\.azure\.com/.test(request.baseUrl)
