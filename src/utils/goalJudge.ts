@@ -1,5 +1,4 @@
 import { sideQuery } from './sideQuery.js'
-import { getRuntimeMainLoopModel } from './model/model.js'
 
 export type GoalVerdict = {
   complete: boolean
@@ -14,9 +13,10 @@ export type GoalVerdict = {
 export async function judgeGoalCompletion(
   objective: string,
   lastAssistantText: string,
+  model: string,
 ): Promise<GoalVerdict> {
   const response = await sideQuery({
-    model: getRuntimeMainLoopModel(),
+    model,
     max_tokens: 256,
     maxRetries: 1,
     querySource: 'goal_judge',

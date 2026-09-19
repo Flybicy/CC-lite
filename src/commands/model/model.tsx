@@ -9,7 +9,6 @@ import {
 import { useAppState, useSetAppState } from '../../state/AppState.js'
 import type { LocalJSXCommandCall, LocalJSXCommandContext } from '../../types/command.js'
 import type { EffortLevel } from '../../utils/effort.js'
-import type { EffortLevel } from '../../utils/effort.js'
 import { isBilledAsExtraUsage } from '../../utils/extraUsage.js'
 import {
   clearFastModeCooldown,

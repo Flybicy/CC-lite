@@ -1626,7 +1626,7 @@ async function* queryLoop(
           // the loop cleanly.
           if (round % GOAL_JUDGE_EVERY === 0 && round <= GOAL_MAX_ROUNDS) {
             try {
-              const verdict = await judgeGoalCompletion(getGoal() ?? '', lastText)
+              const verdict = await judgeGoalCompletion(getGoal() ?? '', lastText, currentModel)
               if (verdict.complete) {
                 clearGoal()
                 yield createSystemMessage(`Goal mode: judge says the goal is complete${verdict.reason ? ` (${verdict.reason})` : ''}; stopping auto-continue.`, 'info')

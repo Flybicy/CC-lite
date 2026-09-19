@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'bun:test'
+import { APIConnectionTimeoutError } from '@anthropic-ai/sdk'
 import {
+  createOpenAIShimClient,
   normalizeSchemaForOpenAI,
   openaiStreamToAnthropic,
 } from './openaiShim.js'
@@ -152,5 +154,56 @@ describe('openaiStreamToAnthropic tool-call routing', () => {
       '0:1}',
       '1:2}',
     ])
+  })
+})
+
+describe('OpenAI shim request controls', () => {
+  it('sends Responses headers only on the Responses transport', async () => {
+    const originalFetch = globalThis.fetch
+    const originalBaseUrl = process.env.OPENAI_BASE_URL
+    const originalApiMode = process.env.OPENAI_API_MODE
+    const requests: Array<{ url: string; headers: Headers }> = []
+    globalThis.fetch = async (input, init) => {
+      requests.push({ url: String(input), headers: new Headers(init?.headers) })
+      return new Response('', { status: 200 })
+    }
+
+    try {
+      process.env.OPENAI_BASE_URL = 'http://127.0.0.1/v1'
+      process.env.OPENAI_API_MODE = 'chat_completions'
+      const chatClient = createOpenAIShimClient({ timeout: 1000 }) as any
+      await chatClient.messages.create({ model: 'test', messages: [], max_tokens: 1, stream: true })
+      expect(requests[0]!.url).toContain('/chat/completions')
+      expect(requests[0]!.headers.has('OpenAI-Beta')).toBe(false)
+
+      process.env.OPENAI_API_MODE = 'responses'
+      const responsesClient = createOpenAIShimClient({ timeout: 1000 }) as any
+      await responsesClient.messages.create({ model: 'test', messages: [], max_tokens: 1, stream: true })
+      expect(requests[1]!.url).toContain('/responses')
+      expect(requests[1]!.headers.get('OpenAI-Beta')).toBe('responses=experimental')
+    } finally {
+      globalThis.fetch = originalFetch
+      if (originalBaseUrl === undefined) delete process.env.OPENAI_BASE_URL
+      else process.env.OPENAI_BASE_URL = originalBaseUrl
+      if (originalApiMode === undefined) delete process.env.OPENAI_API_MODE
+      else process.env.OPENAI_API_MODE = originalApiMode
+    }
+  })
+
+  it('turns the configured timeout into an SDK timeout error', async () => {
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = (_input, init) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(init.signal?.reason))
+    }) as Promise<Response>
+
+    try {
+      const client = createOpenAIShimClient({
+        timeout: 10,
+        providerOverride: { baseUrl: 'http://127.0.0.1/v1', model: 'test' },
+      }) as any
+      await expect(client.messages.create({ model: 'test', messages: [], max_tokens: 1 })).rejects.toBeInstanceOf(APIConnectionTimeoutError)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
   })
 })

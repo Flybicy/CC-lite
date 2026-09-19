@@ -40,7 +40,7 @@ import {
   resolveFastHedgeConfig,
   sseDataLineProgress,
 } from './hedgedRequest.js'
-import { APIError } from '@anthropic-ai/sdk'
+import { APIConnectionTimeoutError, APIError } from '@anthropic-ai/sdk'
 import { isEnvTruthy } from '../../utils/envUtils.js'
 import { getSessionId } from '../../bootstrap/state.js'
 
@@ -69,8 +69,65 @@ function throwUpstreamError(
   throw new APIError(status, parsed as object | undefined, message, new Headers())
 }
 
+function createRequestSignal(
+  timeoutMs: number | undefined,
+  parentSignal: AbortSignal | undefined,
+): {
+  signal?: AbortSignal
+  didTimeout: () => boolean
+  cleanup: () => void
+} {
+  if (typeof timeoutMs !== 'number' || !Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    return { signal: parentSignal, didTimeout: () => false, cleanup: () => {} }
+  }
+
+  const controller = new AbortController()
+  let timedOut = false
+  const timer = setTimeout(() => {
+    timedOut = true
+    controller.abort(new Error(`Request timed out after ${timeoutMs}ms`))
+  }, timeoutMs)
+  const onParentAbort = () => controller.abort(parentSignal?.reason)
+
+  if (parentSignal) {
+    if (parentSignal.aborted) onParentAbort()
+    else parentSignal.addEventListener('abort', onParentAbort, { once: true })
+  }
+
+  return {
+    signal: controller.signal,
+    didTimeout: () => timedOut,
+    cleanup: () => {
+      clearTimeout(timer)
+      parentSignal?.removeEventListener('abort', onParentAbort)
+    },
+  }
+}
+
+async function fetchWithRequestTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number | undefined,
+  parentSignal: AbortSignal | undefined,
+  label: string,
+): Promise<Response> {
+  const requestSignal = createRequestSignal(timeoutMs, parentSignal)
+  try {
+    return await fetch(url, { ...init, signal: requestSignal.signal })
+  } catch (error) {
+    if (requestSignal.didTimeout()) {
+      throw new APIConnectionTimeoutError({
+        message: `${label} timed out after ${timeoutMs}ms`,
+      })
+    }
+    throw error
+  } finally {
+    requestSignal.cleanup()
+  }
+}
+
 // ---------------------------------------------------------------------------
-// Message format conversion: Anthropic → OpenAI
+// Message format conversion: Anthropic -> OpenAI
 // ---------------------------------------------------------------------------
 
 interface OpenAIMessage {
@@ -710,18 +767,21 @@ export interface ProviderOverride {
 class OpenAIShimMessages {
   private defaultHeaders: Record<string, string>
   private providerOverride?: ProviderOverride
+  private defaultTimeout?: number
 
   constructor(
     defaultHeaders: Record<string, string>,
     providerOverride?: ProviderOverride,
+    defaultTimeout?: number,
   ) {
     this.defaultHeaders = defaultHeaders
     this.providerOverride = providerOverride
+    this.defaultTimeout = defaultTimeout
   }
 
   create(
     params: ShimCreateParams,
-    options?: { signal?: AbortSignal; headers?: Record<string, string> },
+    options?: { signal?: AbortSignal; headers?: Record<string, string>; timeout?: number },
   ) {
     const self = this
 
@@ -797,7 +857,7 @@ class OpenAIShimMessages {
   private async _doRequest(
     request: ReturnType<typeof resolveProviderRequest>,
     params: ShimCreateParams,
-    options?: { signal?: AbortSignal; headers?: Record<string, string> },
+    options?: { signal?: AbortSignal; headers?: Record<string, string>; timeout?: number },
   ): Promise<Response> {
     if (request.transport === 'responses') {
       if (request.backend === 'codex') {
@@ -837,7 +897,7 @@ class OpenAIShimMessages {
   private async _doResponsesRequest(
     request: ReturnType<typeof resolveProviderRequest>,
     params: ShimCreateParams,
-    options?: { signal?: AbortSignal; headers?: Record<string, string> },
+    options?: { signal?: AbortSignal; headers?: Record<string, string>; timeout?: number },
   ): Promise<Response> {
     const body = buildResponsesRequestBody(request, params)
     const headers: Record<string, string> = {
@@ -845,6 +905,12 @@ class OpenAIShimMessages {
       ...this.defaultHeaders,
       ...(options?.headers ?? {}),
     }
+
+    // Codex-style defaults belong to the Responses transport. Explicit
+    // user/provider headers merged above win over these.
+    headers.originator ??= 'openclaude'
+    headers['OpenAI-Beta'] ??= 'responses=experimental'
+    headers.session_id ??= getSessionId()
 
     const apiKey = this.providerOverride?.apiKey ?? process.env.OPENAI_API_KEY ?? ''
     const isAzure = /cognitiveservices\.azure\.com|openai\.azure\.com/.test(request.baseUrl)
@@ -872,12 +938,17 @@ class OpenAIShimMessages {
       responsesUrl = `${request.baseUrl}/responses`
     }
 
-    const response = await fetch(responsesUrl, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-      signal: options?.signal,
-    })
+    const response = await fetchWithRequestTimeout(
+      responsesUrl,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+      },
+      options?.timeout ?? this.defaultTimeout,
+      options?.signal,
+      'OpenAI Responses request',
+    )
 
     if (!response.ok) {
       const errorBody = await response.text().catch(() => 'unknown error')
@@ -890,7 +961,7 @@ class OpenAIShimMessages {
   private async _doOpenAIRequest(
     request: ReturnType<typeof resolveProviderRequest>,
     params: ShimCreateParams,
-    options?: { signal?: AbortSignal; headers?: Record<string, string> },
+    options?: { signal?: AbortSignal; headers?: Record<string, string>; timeout?: number },
   ): Promise<Response> {
     const openaiMessages = convertMessages(
       params.messages as Array<{
@@ -963,13 +1034,6 @@ class OpenAIShimMessages {
       ...(options?.headers ?? {}),
     }
 
-    // Codex-style defaults for the Responses transport, mirroring the
-    // anthropic-info headers attached on the Anthropic path. Explicit
-    // user/provider headers merged above win over these.
-    headers.originator ??= 'openclaude'
-    headers['OpenAI-Beta'] ??= 'responses=experimental'
-    headers.session_id ??= getSessionId()
-
     const apiKey = this.providerOverride?.apiKey ?? process.env.OPENAI_API_KEY ?? ''
     const isAzure = /cognitiveservices\.azure\.com|openai\.azure\.com/.test(request.baseUrl)
 
@@ -1004,12 +1068,17 @@ class OpenAIShimMessages {
       chatCompletionsUrl = `${request.baseUrl}/chat/completions`
     }
 
-    const response = await fetch(chatCompletionsUrl, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-      signal: options?.signal,
-    })
+    const response = await fetchWithRequestTimeout(
+      chatCompletionsUrl,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+      },
+      options?.timeout ?? this.defaultTimeout,
+      options?.signal,
+      'OpenAI request',
+    )
 
     if (!response.ok) {
       const errorBody = await response.text().catch(() => 'unknown error')
@@ -1098,8 +1167,9 @@ class OpenAIShimBeta {
   constructor(
     defaultHeaders: Record<string, string>,
     providerOverride?: ProviderOverride,
+    defaultTimeout?: number,
   ) {
-    this.messages = new OpenAIShimMessages(defaultHeaders, providerOverride)
+    this.messages = new OpenAIShimMessages(defaultHeaders, providerOverride, defaultTimeout)
   }
 }
 
@@ -1114,6 +1184,7 @@ export function createOpenAIShimClient(options: {
       ...(options.defaultHeaders ?? {}),
     },
     options.providerOverride,
+    options.timeout,
   )
 
   return {

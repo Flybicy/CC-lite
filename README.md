@@ -53,6 +53,10 @@ All authentication is done via API keys (see [API Configuration](#api-configurat
 
 Added an API shim layer (`src/services/api/openaiShim.ts`) that transparently translates between Anthropic message format and OpenAI-compatible APIs. It supports both Chat Completions and the newer Responses API, so all CC-lite tools (bash, file read/write, grep, glob, agents, MCP, etc.) keep working while you swap in a different backend LLM.
 
+The OpenAI transports honor configured request timeouts and keep Codex-style `originator`, `OpenAI-Beta`, and `session_id` headers scoped to the Responses transport. The `/goal` completion judge receives the active model explicitly, so model switching does not leave goal checks using stale or invalid runtime state.
+
+The current `main` branch includes request-timeout handling for OpenAI transports, Responses-only Codex headers, and explicit active-model forwarding for `/goal`. The maintenance baseline is `273 pass / 31 files` with `bun test`; build the distributable bundle with `bun run build:bundle:cclite`.
+
 ### 4. SearXNG-backed WebSearch
 
 Added an optional override for the built-in `WebSearch` tool so it can query your own SearXNG instance instead of relying on provider-side web search.

@@ -22,6 +22,8 @@
 ### 3. 兼容 OpenAI 兼容 API
 新增 API 适配层（`src/services/api/openaiShim.ts`），在 Anthropic 消息格式与 OpenAI 兼容 API 之间透明转换，同时支持 Chat Completions 与新版 Responses API。所有工具（bash、文件读写、grep、glob、agents、MCP 等）在换用不同后端大模型后照常工作。
 
+OpenAI 传输会遵守配置的请求超时；Codex 风格的 `originator`、`OpenAI-Beta`、`session_id` 只发送到 Responses 传输；`/goal` 裁判会显式使用当前模型，避免切换模型后继续使用过期状态。
+
 ### 4. SearXNG 版 WebSearch
 可用一个环境变量 `CLAUDE_CODE_SEARXNG_BASE_URL` 让内置 `WebSearch` 走你自己的 SearXNG 实例，而不是依赖提供方的服务端搜索；未设置时回退默认行为。可选：设置 `CCLITE_SEMANTIC_RERANK=1` 后，会用本地 advisor 嵌入模型按与查询的语义相似度对结果重排——完全离线、零 API 成本、尽力而为（任何失败都保持原始顺序）。
 
