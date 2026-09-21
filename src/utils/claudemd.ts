@@ -615,6 +615,39 @@ function resolveExcludePatterns(patterns: string[]): string[] {
  * Recursively processes a memory file and all its @include references
  * Returns an array of MemoryFileInfo objects with includes first, then main file
  */
+/**
+ * Project-level instruction filenames, in priority order. AGENTS.md is the
+ * cross-tool standard (https://agents.md, honored by Codex/opencode/Cursor/
+ * Claude); CLAUDE.md is the legacy name. We read whichever exists first and
+ * do NOT load both in the same directory, so a repo that adopts AGENTS.md
+ * doesn't get its instructions counted twice.
+ */
+export const PROJECT_MEMORY_FILENAMES = ['AGENTS.md', 'CLAUDE.md'] as const
+
+/**
+ * Read the first existing project memory file in `baseDir` (AGENTS.md before
+ * CLAUDE.md). Returns the processed entries, or [] if neither exists. The
+ * fallback is per-directory: each directory in the upward walk independently
+ * prefers AGENTS.md but still honors a legacy CLAUDE.md when that's all it has.
+ */
+async function processProjectMemoryWithFallback(
+  baseDir: string,
+  processedPaths: Set<string>,
+  includeExternal: boolean,
+): Promise<MemoryFileInfo[]> {
+  for (const name of PROJECT_MEMORY_FILENAMES) {
+    const filePath = join(baseDir, name)
+    const res = await processMemoryFile(
+      filePath,
+      'Project',
+      processedPaths,
+      includeExternal,
+    )
+    if (res.length > 0) return res
+  }
+  return []
+}
+
 export async function processMemoryFile(
   filePath: string,
   type: MemoryType,
@@ -824,6 +857,18 @@ export const getMemoryFiles = memoize(
 
     // Process User file (only if userSettings is enabled)
     if (isSettingSourceEnabled('userSettings')) {
+      // User global: read ~/.claude/AGENTS.md first (priority), then the
+      // legacy ~/.claude/CLAUDE.md. Both are loaded when present so an
+      // existing CLAUDE.md keeps working after adopting AGENTS.md.
+      const userAgentsMd = join(getClaudeConfigHomeDir(), 'AGENTS.md')
+      result.push(
+        ...(await processMemoryFile(
+          userAgentsMd,
+          'User',
+          processedPaths,
+          true, // User memory can always include external files
+        )),
+      )
       const userClaudeMd = getMemoryPath('User')
       result.push(
         ...(await processMemoryFile(
@@ -883,24 +928,21 @@ export const getMemoryFiles = memoize(
         pathInWorkingPath(dir, canonicalRoot) &&
         !pathInWorkingPath(dir, gitRoot)
 
-      // Try reading CLAUDE.md (Project) - only if projectSettings is enabled
+      // Try reading the project memory file (AGENTS.md preferred, CLAUDE.md
+      // fallback) - only if projectSettings is enabled
       if (isSettingSourceEnabled('projectSettings') && !skipProject) {
-        const projectPath = join(dir, 'CLAUDE.md')
         result.push(
-          ...(await processMemoryFile(
-            projectPath,
-            'Project',
+          ...(await processProjectMemoryWithFallback(
+            dir,
             processedPaths,
             includeExternal,
           )),
         )
 
-        // Try reading .claude/CLAUDE.md (Project)
-        const dotClaudePath = join(dir, '.claude', 'CLAUDE.md')
+        // Try reading .claude/AGENTS.md then .claude/CLAUDE.md (Project)
         result.push(
-          ...(await processMemoryFile(
-            dotClaudePath,
-            'Project',
+          ...(await processProjectMemoryWithFallback(
+            join(dir, '.claude'),
             processedPaths,
             includeExternal,
           )),
@@ -940,23 +982,20 @@ export const getMemoryFiles = memoize(
     if (isEnvTruthy(process.env.CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD)) {
       const additionalDirs = getAdditionalDirectoriesForClaudeMd()
       for (const dir of additionalDirs) {
-        // Try reading CLAUDE.md from the additional directory
-        const projectPath = join(dir, 'CLAUDE.md')
+        // Try reading the project memory file from the additional directory
+        // (AGENTS.md preferred, CLAUDE.md fallback)
         result.push(
-          ...(await processMemoryFile(
-            projectPath,
-            'Project',
+          ...(await processProjectMemoryWithFallback(
+            dir,
             processedPaths,
             includeExternal,
           )),
         )
 
-        // Try reading .claude/CLAUDE.md from the additional directory
-        const dotClaudePath = join(dir, '.claude', 'CLAUDE.md')
+        // Try reading .claude/AGENTS.md then .claude/CLAUDE.md from the additional directory
         result.push(
-          ...(await processMemoryFile(
-            dotClaudePath,
-            'Project',
+          ...(await processProjectMemoryWithFallback(
+            join(dir, '.claude'),
             processedPaths,
             includeExternal,
           )),
@@ -1253,22 +1292,14 @@ export async function getMemoryFilesForNestedDirectory(
 ): Promise<MemoryFileInfo[]> {
   const result: MemoryFileInfo[] = []
 
-  // Process project memory files (CLAUDE.md and .claude/CLAUDE.md)
+  // Process project memory files (AGENTS.md preferred, CLAUDE.md fallback)
   if (isSettingSourceEnabled('projectSettings')) {
-    const projectPath = join(dir, 'CLAUDE.md')
     result.push(
-      ...(await processMemoryFile(
-        projectPath,
-        'Project',
-        processedPaths,
-        false,
-      )),
+      ...(await processProjectMemoryWithFallback(dir, processedPaths, false)),
     )
-    const dotClaudePath = join(dir, '.claude', 'CLAUDE.md')
     result.push(
-      ...(await processMemoryFile(
-        dotClaudePath,
-        'Project',
+      ...(await processProjectMemoryWithFallback(
+        join(dir, '.claude'),
         processedPaths,
         false,
       )),
@@ -1430,13 +1461,14 @@ export async function shouldShowClaudeMdExternalIncludesWarning(): Promise<boole
 }
 
 /**
- * Check if a file path is a memory file (CLAUDE.md, CLAUDE.local.md, or .claude/rules/*.md)
+ * Check if a file path is a memory file (AGENTS.md, CLAUDE.md, CLAUDE.local.md,
+ * or .claude/rules/*.md)
  */
 export function isMemoryFilePath(filePath: string): boolean {
   const name = basename(filePath)
 
-  // CLAUDE.md or CLAUDE.local.md anywhere
-  if (name === 'CLAUDE.md' || name === 'CLAUDE.local.md') {
+  // AGENTS.md, CLAUDE.md, or CLAUDE.local.md anywhere
+  if (name === 'AGENTS.md' || name === 'CLAUDE.md' || name === 'CLAUDE.local.md') {
     return true
   }
 

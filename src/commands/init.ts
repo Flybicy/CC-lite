@@ -3,7 +3,9 @@ import type { Command } from '../commands.js'
 import { maybeMarkProjectOnboardingComplete } from '../projectOnboardingState.js'
 import { isEnvTruthy } from '../utils/envUtils.js'
 
-const OLD_INIT_PROMPT = `Please analyze this codebase and create a CLAUDE.md file, which will be given to future instances of CC-lite to operate in this repository.
+const OLD_INIT_PROMPT = `Write the file as AGENTS.md (the https://agents.md standard) rather than CLAUDE.md; only fall back to an existing CLAUDE.md if one is already present. Wherever these instructions say "CLAUDE.md", treat it as the project instruction file (AGENTS.md preferred).
+
+Please analyze this codebase and create a CLAUDE.md file, which will be given to future instances of CC-lite to operate in this repository.
 
 What to add:
 1. Commands that will be commonly used, such as how to build, lint, and run tests. Include the necessary commands to develop in this codebase, such as how to run a single test.
@@ -25,7 +27,9 @@ Usage notes:
 This file provides guidance to CC-lite (claude.ai/code) when working with code in this repository.
 \`\`\``
 
-const NEW_INIT_PROMPT = `Set up a minimal CLAUDE.md (and optionally skills and hooks) for this repo. CLAUDE.md is loaded into every CC-lite session, so it must be concise — only include what Claude would get wrong without it.
+const NEW_INIT_PROMPT = `Write the project instruction file as AGENTS.md (the https://agents.md standard) rather than CLAUDE.md; only reuse an existing CLAUDE.md if one is already present. Wherever this prompt says "CLAUDE.md", treat it as the project instruction file (AGENTS.md preferred). The personal CLAUDE.local.md name is unchanged.
+
+Set up a minimal CLAUDE.md (and optionally skills and hooks) for this repo. CLAUDE.md is loaded into every CC-lite session, so it must be concise — only include what Claude would get wrong without it.
 
 ## Phase 1: Ask what to set up
 

@@ -17,9 +17,12 @@ export type Step = {
 }
 
 export function getSteps(): Step[] {
-  const hasClaudeMd = getFsImplementation().existsSync(
-    join(getCwd(), 'CLAUDE.md'),
-  )
+  const fs = getFsImplementation()
+  // AGENTS.md (agents.md standard) or the legacy CLAUDE.md both count as
+  // an onboarded project.
+  const hasClaudeMd =
+    fs.existsSync(join(getCwd(), 'AGENTS.md')) ||
+    fs.existsSync(join(getCwd(), 'CLAUDE.md'))
   const isWorkspaceDirEmpty = isDirEmpty(getCwd())
 
   return [
