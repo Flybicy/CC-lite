@@ -3,6 +3,9 @@
  */
 
 import { Buffer } from 'buffer'
+import { writeFileSync, unlinkSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
 import { env } from '../../utils/env.js'
 import { execFileNoThrow } from '../../utils/execFileNoThrow.js'
 import { BEL, ESC, ESC_TYPE, SEP } from './ansi.js'
@@ -211,11 +214,95 @@ function copyNative(text: string): void {
       return
     }
     case 'win32':
-      // clip.exe is always available on Windows. Unicode handling is
-      // imperfect (system locale encoding) but good enough for a fallback.
-      void execFileNoThrow('clip', [], opts)
+      // clip.exe decodes its stdin using the system ANSI/OEM codepage (e.g.
+      // GBK/936 on Chinese Windows), so piping UTF-8 bytes mangles non-Latin
+      // text into mojibake. Set-Clipboard takes a real string and writes
+      // UTF-16 to the clipboard, so it is codepage-independent.
+      copyWin32(text)
       return
   }
+}
+
+/**
+ * Max base64 payload passed on the PowerShell command line. Windows caps a
+ * process command line at 32767 chars; larger selections go through a UTF-8
+ * temp file instead so the copy still round-trips exactly.
+ */
+const WIN_CLIPBOARD_ARG_LIMIT = 30000
+
+/**
+ * Write to the Windows clipboard via PowerShell Set-Clipboard, encoding the
+ * text as base64 so the command line stays pure ASCII (codepage-safe). Falls
+ * back to clip.exe only when PowerShell is unavailable. Fire-and-forget.
+ */
+function copyWin32(text: string): void {
+  const b64 = Buffer.from(text, 'utf8').toString('base64')
+  const opts = { useCwd: false, timeout: 2000 }
+
+  if (b64.length <= WIN_CLIPBOARD_ARG_LIMIT) {
+    const decode =
+      `([System.Text.Encoding]::UTF8.GetString(` +
+      `[System.Convert]::FromBase64String('${b64}')))`
+    void execFileNoThrow(
+      'powershell',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        `Set-Clipboard -Value ${decode}`,
+      ],
+      opts,
+    ).then(r => {
+      if (r.code !== 0) fallbackClip(text)
+    })
+    return
+  }
+
+  // Large selection: hand the bytes to PowerShell through a UTF-8 temp file
+  // to sidestep the command-line length cap. Get-Content -Raw preserves the
+  // exact content; the temp file is removed after the copy completes.
+  let tmpFile: string
+  try {
+    tmpFile = join(
+      tmpdir(),
+      `cclite-clip-${Date.now()}-${Math.random().toString(36).slice(2)}.txt`,
+    )
+    writeFileSync(tmpFile, text, { encoding: 'utf8' })
+  } catch {
+    fallbackClip(text)
+    return
+  }
+  const literalPath = tmpFile.replaceAll("'", "''")
+  void execFileNoThrow(
+    'powershell',
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      `Set-Clipboard -Value (Get-Content -Raw -Encoding UTF8 -LiteralPath '${literalPath}')`,
+    ],
+    opts,
+  ).then(r => {
+    try {
+      unlinkSync(tmpFile)
+    } catch {
+      // Best effort — the OS clears its temp dir eventually.
+    }
+    if (r.code !== 0) fallbackClip(text)
+  })
+}
+
+/**
+ * Last-resort Windows clipboard write when PowerShell is unavailable. clip.exe
+ * decodes stdin with the system codepage, so non-ASCII may still be mangled,
+ * but for ASCII it works and is better than dropping the copy entirely.
+ */
+function fallbackClip(text: string): void {
+  void execFileNoThrow('clip', [], {
+    input: text,
+    useCwd: false,
+    timeout: 2000,
+  })
 }
 
 /** @internal test-only */

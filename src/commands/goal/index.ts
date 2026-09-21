@@ -9,7 +9,13 @@ const goal = {
   contentLength: 0, // Dynamic content
   source: 'builtin',
   argumentHint: '<goal> | off',
-  load: () => import('./goal.js'),
+  // Lazy-load the implementation inside getPromptForCommand (like /insights).
+  // PromptCommand has no `load` field — the slash-command processor calls
+  // getPromptForCommand directly, so it must exist on the command object.
+  async getPromptForCommand(args, context) {
+    const real = (await import('./goal.js')).default
+    return real.getPromptForCommand(args, context)
+  },
 } satisfies Command
 
 export default goal
