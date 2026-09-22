@@ -1658,6 +1658,12 @@ async function* queryLoop(
           }
           clearGoal()
           yield createSystemMessage('Goal mode stopped: continuation round limit reached. Run /goal off or set a new goal.', 'warning')
+        } else {
+          // Model emitted the completion marker: the goal is done. Clear it so
+          // auto-continue stops AND the persistent goal banner disappears
+          // (previously the banner lingered until /goal off).
+          clearGoal()
+          yield createSystemMessage('Goal mode: goal complete; auto-continue stopped.', 'info')
         }
       }
 
