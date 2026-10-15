@@ -105,6 +105,25 @@ Claude Code ships with dozens of feature flags gated behind `bun:bundle` compile
 
 See [FEATURES.md](FEATURES.md) for the full audit of all 88 flags and their status.
 
+### 7. Incremental context compression (acp-kernel)
+
+Auto-compact is replaced by a model-driven, incremental compression engine ported from [`acp-kernel`](https://github.com/ranxianglei/acp-kernel) (MIT) -- the same kernel that powers the billion-context proxy.
+
+Instead of periodically rewriting the whole history into one lossy summary, the model folds *consumed* ranges into durable summaries as it goes, and can recover any of them later:
+
+| Tool | What it does |
+|---|---|
+| `compress` | Fold a consumed message range into a detailed summary |
+| `decompress` | Pull the full original text of a folded block back |
+| `search_context` | Keyword-search folded blocks and visible messages |
+| `acp_status` | Show context usage, active blocks and reclaimable tokens |
+
+Because each turn only folds *new* material and never rewrites what came before, the established prompt prefix stays valid and the provider cache keeps hitting. Folded ranges are addressed by stable `mNNNNN` refs, so a fold is reversible rather than destructive, and retention stays constant instead of decaying with every compaction round.
+
+The engine refuses to fold ranges that would split a tool call from its result, or that reach into the protected zone (recent messages, the last user message, and the session's first user message always stay visible).
+
+Turn it off with `"acpEnabled": false` in settings, or `CCLITE_DISABLE_ACP=1`; `CCLITE_ACP=1` forces it on. Window size follows `acpContextLimit` / `CCLITE_ACP_CONTEXT_LIMIT` (default 200000).
+
 ---
 
 ## Repository (clone / pull / push)

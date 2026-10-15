@@ -33,6 +33,25 @@ Anthropic 会向每条对话注入系统级指令（硬编码拒答模式、"网
 ### 6. 解锁实验性功能
 解锁所有能干净编译且**在本 fork 中真正可用**的功能开关：`ULTRATHINK`、`VOICE_MODE`、`AGENT_TRIGGERS`、`TOKEN_BUDGET`、`VERIFICATION_AGENT`、`EXTRACT_MEMORIES`、`HISTORY_PICKER`、`MESSAGE_ACTIONS`、`QUICK_SEARCH`、`SHOT_STATS`、`COMPACTION_REMINDERS` 等。依赖 claude.ai OAuth（已剥离）的死开关 —— `ULTRAPLAN`（远程 CCR 规划）、`BRIDGE_MODE`（Remote Control 桥接）等 —— 与上游其余死开关一并排除。全部 88 个开关的审计见 [FEATURES.md](FEATURES.md)。
 
+### 7. 增量式上下文压缩（acp-kernel）
+
+用模型驱动的增量压缩引擎取代原来的 auto-compact，移植自 [`acp-kernel`](https://github.com/ranxianglei/acp-kernel)（MIT）—— 也就是 billion-context 代理所用的同一套内核。
+
+它不再定期把整段历史重写成一份有损摘要，而是让模型把**已经用完**的消息段就地折叠成摘要，并且随时可以取回：
+
+| 工具 | 作用 |
+|---|---|
+| `compress` | 把已消费的消息区间折叠成一份详细摘要 |
+| `decompress` | 把某个折叠块的完整原文取回 |
+| `search_context` | 在折叠块和可见消息里按关键词检索 |
+| `acp_status` | 查看上下文占用、活跃块与可回收 token |
+
+因为每轮只折叠**新增**内容、从不重写既有历史，已建立的提示前缀始终有效，供应商缓存能持续命中。折叠区间用稳定的 `mNNNNN` 引用编号寻址，所以折叠是可逆的而非破坏性的；留存率保持恒定，不会随压缩轮次衰减。
+
+引擎会拒绝会拆散 tool-call 与 tool-result 配对的区间，也不会碰保护区（最近消息、最后一条用户消息、以及会话的第一条用户消息始终可见）。
+
+关闭方式：settings 里写 `"acpEnabled": false`，或环境变量 `CCLITE_DISABLE_ACP=1`；`CCLITE_ACP=1` 可强制开启。窗口大小由 `acpContextLimit` / `CCLITE_ACP_CONTEXT_LIMIT` 决定（默认 200000）。
+
 ---
 
 ## 快速安装（一行命令，依赖全自动）

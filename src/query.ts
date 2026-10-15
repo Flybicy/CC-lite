@@ -59,6 +59,9 @@ import { generateToolUseSummary } from './services/toolUseSummary/toolUseSummary
 import { clearGoal, getGoal, GOAL_COMPLETE_MARKER, GOAL_JUDGE_EVERY, GOAL_MAX_ROUNDS, getGoalRound, incrementGoalRound, isGoalModeActive } from './utils/goalMode.js'
 import { judgeGoalCompletion } from './utils/goalJudge.js'
 import { prependUserContext, appendSystemContext } from './utils/api.js'
+import { isAcpEnabled } from './services/acp/config.js'
+import { getAcpSystemPrompt } from './services/acp/prompt.js'
+import { applyAcpStage } from './services/acp/stage.js'
 import { isTierAlias } from './utils/model/aliases.js'
 import { resolveTierModel } from './utils/model/modelProfiles.js'
 import { resolveTierConnectionByTier } from './utils/providers/tierResolver.js'
@@ -574,25 +577,41 @@ async function* queryLoop(
       messagesForQuery = collapseResult.messages
     }
 
+    // ACP injects its compression doctrine into the system prompt. The doctrine
+    // is byte-stable across turns (module-level cache), so the provider prefix
+    // cache stays valid; only the rendered MESSAGE list changes per turn.
+    const acpEnabled = isAcpEnabled()
+    const acpSystemPrompt = acpEnabled ? getAcpSystemPrompt() : null
     const fullSystemPrompt = asSystemPrompt(
-      appendSystemContext(systemPrompt, systemContext),
+      acpSystemPrompt === null
+        ? appendSystemContext(systemPrompt, systemContext)
+        : [
+            ...appendSystemContext(systemPrompt, systemContext),
+            acpSystemPrompt,
+          ],
     )
 
     queryCheckpoint('query_autocompact_start')
-    const { compactionResult, consecutiveFailures } = await deps.autocompact(
-      messagesForQuery,
-      toolUseContext,
-      {
-        systemPrompt,
-        userContext,
-        systemContext,
-        toolUseContext,
-        forkContextMessages: messagesForQuery,
-      },
-      querySource,
-      tracking,
-      snipTokensFreed,
-    )
+    // ACP supersedes auto-compact when enabled. The kernel folds consumed
+    // ranges incrementally through the model's own `compress` calls and never
+    // rewrites the established context prefix; running both systems would
+    // destroy the block bookkeeping and collapse the prefix cache.
+    const { compactionResult, consecutiveFailures } = acpEnabled
+      ? { compactionResult: null, consecutiveFailures: undefined }
+      : await deps.autocompact(
+          messagesForQuery,
+          toolUseContext,
+          {
+            systemPrompt,
+            userContext,
+            systemContext,
+            toolUseContext,
+            forkContextMessages: messagesForQuery,
+          },
+          querySource,
+          tracking,
+          snipTokensFreed,
+        )
     queryCheckpoint('query_autocompact_end')
 
     if (compactionResult) {
@@ -668,6 +687,15 @@ async function* queryLoop(
         ...(tracking ?? { compacted: false, turnId: '', turnCounter: 0 }),
         consecutiveFailures,
       }
+    }
+
+    // ACP: render the folded view. Runs after the compact chain so it sees the
+    // final message list and before the request is built so the model receives
+    // ref tags + block summaries instead of the folded ranges. Strictly
+    // incremental: previously folded material is never re-summarised.
+    if (acpEnabled) {
+      messagesForQuery =
+        applyAcpStage(messagesForQuery)?.messages ?? messagesForQuery
     }
 
     //TODO: no need to set toolUseContext.messages during set-up since it is updated here

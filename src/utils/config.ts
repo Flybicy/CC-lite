@@ -231,6 +231,12 @@ export type GlobalConfig = {
   bypassPermissionsModeAccepted?: boolean
   hasUsedBackslashReturn?: boolean
   autoCompactEnabled: boolean // Controls whether auto-compact is enabled
+  /**
+   * ACP incremental compression (acp-kernel). Defaults to on: the model folds
+   * consumed ranges itself and auto-compact is bypassed entirely. Set false to
+   * restore the legacy auto-compact path.
+   */
+  acpEnabled?: boolean
   showTurnDuration: boolean // Controls whether to show turn duration message (e.g., "Cooked for 1m 6s")
   /**
    * @deprecated Use settings.env instead.
@@ -591,6 +597,7 @@ function createDefaultGlobalConfig(): GlobalConfig {
     verbose: false,
     editorMode: 'normal',
     autoCompactEnabled: true,
+    acpEnabled: true,
     showTurnDuration: true,
     hasSeenTasksHint: false,
     hasUsedStash: false,
@@ -635,6 +642,7 @@ export const GLOBAL_CONFIG_KEYS = [
   'editorMode',
   'hasUsedBackslashReturn',
   'autoCompactEnabled',
+  'acpEnabled',
   'showTurnDuration',
   'diffTool',
   'env',
