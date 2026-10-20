@@ -122,7 +122,7 @@ Because each turn only folds *new* material and never rewrites what came before,
 
 The engine refuses to fold ranges that would split a tool call from its result, or that reach into the protected zone (recent messages, the last user message, and the session's first user message always stay visible).
 
-Turn it off with `"acpEnabled": false` in settings, or `CCLITE_DISABLE_ACP=1`; `CCLITE_ACP=1` forces it on. Window size follows `acpContextLimit` / `CCLITE_ACP_CONTEXT_LIMIT` (default 200000).
+Turn it off with `"acpEnabled": false` in settings, or `CCLITE_DISABLE_ACP=1`; `CCLITE_ACP=1` forces it on. The window is taken from whatever cclite already resolved for the model in play -- tier window, models.dev capability, a `[1m]` model, `CLAUDE_CODE_MAX_CONTEXT_TOKENS`, or /config -> Context tokens -- so a 600K or 1M endpoint is compressed at its real size instead of a hardcoded 200K. `acpContextLimit` (settings) or `CCLITE_ACP_CONTEXT_LIMIT` (env) override it; 200000 is only the last-resort fallback.
 
 ---
 

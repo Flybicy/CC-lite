@@ -59,7 +59,7 @@ import { generateToolUseSummary } from './services/toolUseSummary/toolUseSummary
 import { clearGoal, getGoal, GOAL_COMPLETE_MARKER, GOAL_JUDGE_EVERY, GOAL_MAX_ROUNDS, getGoalRound, incrementGoalRound, isGoalModeActive } from './utils/goalMode.js'
 import { judgeGoalCompletion } from './utils/goalJudge.js'
 import { prependUserContext, appendSystemContext } from './utils/api.js'
-import { isAcpEnabled } from './services/acp/config.js'
+import { isAcpEnabled, setAcpModelHint } from './services/acp/config.js'
 import { getAcpSystemPrompt } from './services/acp/prompt.js'
 import { applyAcpStage } from './services/acp/stage.js'
 import { isTierAlias } from './utils/model/aliases.js'
@@ -580,6 +580,10 @@ async function* queryLoop(
     // ACP injects its compression doctrine into the system prompt. The doctrine
     // is byte-stable across turns (module-level cache), so the provider prefix
     // cache stays valid; only the rendered MESSAGE list changes per turn.
+    // ACP sizes its context window from whatever cclite resolved for the model
+    // in play (tier window, capability probe, [1m], CLAUDE_CODE_MAX_CONTEXT_TOKENS
+    // or /config → Context tokens) instead of a hardcoded 200K.
+    setAcpModelHint(toolUseContext.options.mainLoopModel)
     const acpEnabled = isAcpEnabled()
     const acpSystemPrompt = acpEnabled ? getAcpSystemPrompt() : null
     const fullSystemPrompt = asSystemPrompt(

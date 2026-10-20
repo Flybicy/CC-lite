@@ -32,16 +32,24 @@ let session: AcpSession | null = null
 
 export function getAcpSession(): AcpSession {
   const limit = getAcpContextLimit()
-  if (!session || session.limit !== limit) {
+  if (!session) {
     session = {
       core: createCore(),
       state: createInitialState(),
       contentStore: createContentStore(),
-      config: buildAcpConfig(),
+      config: buildAcpConfig(limit),
       lastCores: [],
       lastTokenCount: 0,
       limit,
     }
+    return session
+  }
+  if (session.limit !== limit) {
+    // The model window changed (model switch, settings edit). The folded
+    // blocks are still valid prose, so keep them and only re-derive the
+    // thresholds — dropping them would throw away real compression work.
+    session.config = buildAcpConfig(limit)
+    session.limit = limit
   }
   return session
 }

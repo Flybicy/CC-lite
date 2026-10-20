@@ -50,7 +50,7 @@ Anthropic 会向每条对话注入系统级指令（硬编码拒答模式、"网
 
 引擎会拒绝会拆散 tool-call 与 tool-result 配对的区间，也不会碰保护区（最近消息、最后一条用户消息、以及会话的第一条用户消息始终可见）。
 
-关闭方式：settings 里写 `"acpEnabled": false`，或环境变量 `CCLITE_DISABLE_ACP=1`；`CCLITE_ACP=1` 可强制开启。窗口大小由 `acpContextLimit` / `CCLITE_ACP_CONTEXT_LIMIT` 决定（默认 200000）。
+关闭方式：settings 里写 `"acpEnabled": false`，或环境变量 `CCLITE_DISABLE_ACP=1`；`CCLITE_ACP=1` 可强制开启。窗口大小直接沿用 cclite 为当前模型算出的值 —— tier 窗口、models.dev 能力探测、`[1m]` 后缀模型、`CLAUDE_CODE_MAX_CONTEXT_TOKENS`、或 /config → Context tokens —— 所以 600K / 1M 的端点会按真实窗口压缩，而不是被写死的 200K。settings 里的 `acpContextLimit` 或环境变量 `CCLITE_ACP_CONTEXT_LIMIT` 可强制覆盖；200000 仅作为最后的兜底。
 
 ---
 
