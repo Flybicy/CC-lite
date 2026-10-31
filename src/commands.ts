@@ -8,6 +8,7 @@ import issue from './commands/issue/index.js'
 // feedback import removed (Anthropic API feedback stripped)
 import clear from './commands/clear/index.js'
 import color from './commands/color/index.js'
+import sidebar from './commands/sidebar/index.js'
 import commit from './commands/commit.js'
 import copy from './commands/copy/index.js'
 // desktop import removed (Claude Desktop app stripped)
@@ -237,6 +238,7 @@ const COMMANDS = memoize((): Command[] => [
   compact,
   config,
   copy,
+  sidebar,
   // desktop removed
   context,
   contextNonInteractive,
@@ -244,7 +246,7 @@ const COMMANDS = memoize((): Command[] => [
   diff,
   // doctor removed
   effort,
-  exit,
+  exit,
   files,
   heapDump,
   help,
@@ -586,6 +588,7 @@ export const REMOTE_SAFE_COMMANDS: Set<Command> = new Set([
   help, // Show help
   theme, // Change terminal theme
   color, // Change agent color
+  sidebar, // Toggle the right rail
   vim, // Toggle vim mode
   cost, // Show session cost (local cost tracking)
   usageReport,

@@ -4461,7 +4461,7 @@ export function REPL({
       // gets yellow. Next n/N re-establishes via step()→jump().
       onScroll={() => jumpRef.current?.disarmSearch()} /> : null}
         <CancelRequestHandler {...cancelRequestProps} />
-        {transcriptScrollRef ? <FullscreenLayout scrollRef={scrollRef} sidebar={showRightSidebar && transcriptCols >= 100 ? <RightSidebar width={34} /> : undefined} scrollable={<>
+        {transcriptScrollRef ? <FullscreenLayout scrollRef={scrollRef} sidebar={showRightSidebar && transcriptCols >= 80 ? <RightSidebar width={34} /> : undefined} scrollable={<>
                 {transcriptMessagesElement}
                 {transcriptToolJSX}
                 <SandboxViolationExpandedView />
@@ -4597,7 +4597,7 @@ export function REPL({
       {feature('MESSAGE_ACTIONS') && isFullscreenEnvEnabled() && !disableMessageActions ? <MessageActionsKeybindings handlers={messageActionHandlers} isActive={cursor !== null} /> : null}
       <CancelRequestHandler {...cancelRequestProps} />
       <MCPConnectionManager key={remountKey} dynamicMcpConfig={dynamicMcpConfig} isStrictMcpConfig={strictMcpConfig}>
-        <FullscreenLayout scrollRef={scrollRef} sidebar={showRightSidebar && transcriptCols >= 100 ? <RightSidebar width={34} /> : undefined} overlay={toolPermissionOverlay} bottomFloat={feature('BUDDY') && companionVisible && !companionNarrow ? <CompanionFloatingBubble /> : undefined} modal={centeredModal} modalScrollRef={modalScrollRef} dividerYRef={dividerYRef} hidePill={!!viewedAgentTask} hideSticky={!!viewedTeammateTask} newMessageCount={unseenDivider?.count ?? 0} onPillClick={() => {
+        <FullscreenLayout scrollRef={scrollRef} sidebar={showRightSidebar && transcriptCols >= 80 ? <RightSidebar width={34} /> : undefined} overlay={toolPermissionOverlay} bottomFloat={feature('BUDDY') && companionVisible && !companionNarrow ? <CompanionFloatingBubble /> : undefined} modal={centeredModal} modalScrollRef={modalScrollRef} dividerYRef={dividerYRef} hidePill={!!viewedAgentTask} hideSticky={!!viewedTeammateTask} newMessageCount={unseenDivider?.count ?? 0} onPillClick={() => {
         setCursor(null);
         jumpToNew(scrollRef.current);
       }} scrollable={<>
