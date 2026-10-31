@@ -108,32 +108,139 @@ export function getNiubashBashCandidates(
   return candidates
 }
 
-function shouldPreferNiubash(): boolean {
-  if (process.env.CCLITE_USE_NIUBASH !== undefined) {
-    return isEnvTruthy(process.env.CCLITE_USE_NIUBASH)
+/** Conventional Niubash install roots, most specific first. */
+export function getNiubashInstallRoots(
+  env: NodeJS.ProcessEnv = process.env,
+): string[] {
+  const roots: string[] = []
+  const add = (value: string | undefined) => {
+    if (value && !roots.includes(value)) roots.push(value)
   }
 
-  // When cclite is launched from Niubash, these variables are already
-  // exported. Auto-detecting that case preserves the user's active shell
-  // without changing the default for ordinary PowerShell/cmd launches.
-  return Boolean(
-    process.env.NIU_SHELL ||
-      process.env.WINUXSH_SHELL ||
-      process.env.WINUXCMD_HOME,
+  const bases = [
+    env.LOCALAPPDATA ? pathWin32.join(env.LOCALAPPDATA, 'Programs') : undefined,
+    env.APPDATA ? pathWin32.join(env.APPDATA, 'Programs') : undefined,
+    env.ProgramFiles,
+    env['ProgramFiles(x86)'],
+    env.USERPROFILE,
+  ]
+
+  for (const base of bases) {
+    if (base) add(pathWin32.join(base, 'Niubash'))
+  }
+
+  return roots
+}
+
+/**
+ * `C:\Windows\System32\bash.exe` is the WSL launcher stub, not a POSIX
+ * shell: it fails whenever no distro is installed. Never accept it.
+ */
+export function isWslBashStub(candidate: string): boolean {
+  const normalized = candidate.replace(/\//g, '\\').toLowerCase()
+  return (
+    normalized.endsWith('\\windows\\system32\\bash.exe') ||
+    normalized.endsWith('\\windows\\sysnative\\bash.exe')
   )
 }
 
+/** True when `candidate` lives inside a Niubash / winuxcmd installation. */
+export function looksLikeNiubashPath(candidate: string): boolean {
+  const normalized = candidate.replace(/\//g, '\\').toLowerCase()
+  return (
+    normalized.includes('\\winuxcmd\\') ||
+    normalized.includes('\\niubash\\') ||
+    normalized.endsWith('\\niu-bash.exe')
+  )
+}
+
+/** Run `where.exe`, returning every match except ones in the current directory. */
+function findAllExecutables(executable: string): string[] {
+  try {
+    const result = execSync_DEPRECATED(`where.exe ${executable}`, {
+      stdio: 'pipe',
+      encoding: 'utf8',
+    }).trim()
+    if (!result) return []
+
+    const cwd = getCwd().toLowerCase()
+    return result
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .filter(candidatePath => {
+        const normalizedPath = path.resolve(candidatePath).toLowerCase()
+        const pathDir = path.dirname(normalizedPath).toLowerCase()
+        return !(pathDir === cwd || normalizedPath.startsWith(cwd + path.sep))
+      })
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Discover a Niubash installation that was never exported into the
+ * environment: `bash.exe` already on PATH, the `niu`/`niubash` launcher, or a
+ * conventional install root. Windows-only; other platforms have no use for
+ * Niubash and must keep their system shell untouched.
+ */
+export function discoverNiubashBashPath(
+  env: NodeJS.ProcessEnv = process.env,
+): string | null {
+  if (process.platform !== 'win32') return null
+
+  for (const candidate of findAllExecutables('bash')) {
+    if (
+      !isWslBashStub(candidate) &&
+      looksLikeNiubashPath(candidate) &&
+      checkPathExists(candidate)
+    ) {
+      return candidate
+    }
+  }
+
+  for (const launcher of ['niu', 'niubash']) {
+    for (const launcherPath of findAllExecutables(launcher)) {
+      const launcherDir = pathWin32.dirname(launcherPath)
+      for (const candidate of [
+        pathWin32.join(launcherDir, 'winuxcmd', 'bin', 'bash.exe'),
+        pathWin32.join(launcherDir, 'bin', 'bash.exe'),
+      ]) {
+        if (checkPathExists(candidate)) return candidate
+      }
+    }
+  }
+
+  for (const root of getNiubashInstallRoots(env)) {
+    const candidate = pathWin32.join(root, 'winuxcmd', 'bin', 'bash.exe')
+    if (checkPathExists(candidate)) return candidate
+  }
+
+  return null
+}
+
+/**
+ * Niubash wins whenever it is installed; `CCLITE_USE_NIUBASH=0` forces Git
+ * Bash instead. Auto-preferring only when launched from inside Niubash is
+ * gone — a normal PowerShell/cmd launch should still pick Niubash when the
+ * user has it installed.
+ */
+export function shouldPreferNiubash(
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  if (env.CCLITE_USE_NIUBASH !== undefined) {
+    return isEnvTruthy(env.CCLITE_USE_NIUBASH)
+  }
+  return true
+}
+
 function findNiubashPath(): string | null {
+  if (!shouldPreferNiubash()) return null
+
   for (const candidate of getNiubashBashCandidates()) {
     if (checkPathExists(candidate)) return candidate
   }
 
-  if (shouldPreferNiubash()) {
-    const discovered = findExecutable('bash')
-    if (discovered && checkPathExists(discovered)) return discovered
-  }
-
-  return null
+  return discoverNiubashBashPath()
 }
 
 /**
@@ -143,21 +250,33 @@ function findNiubashPath(): string | null {
  */
 export function setShellIfWindows(): void {
   if (getPlatform() === 'windows') {
-    const bashPath = findGitBashPath()
+    const bashPath = tryFindPosixShell()
+    if (!bashPath) {
+      // No POSIX shell at all: keep the process alive so the PowerShell tool
+      // can take over. BashTool hides itself via hasPosixShell().
+      // biome-ignore lint/suspicious/noConsole:: intentional console output
+      console.error(
+        'CC-lite: no POSIX shell found (neither Niubash nor Git Bash). Falling back to the PowerShell tool; Bash commands are unavailable.',
+      )
+      return
+    }
     process.env.SHELL = bashPath
     logForDebugging(`Using bash path: "${bashPath}"`)
   }
 }
 
 /**
- * Find the Windows Bash-compatible executable used by BashTool.
+ * Resolve the POSIX shell used by BashTool, or null when this machine has
+ * none. Order: explicit overrides → Niubash → Git Bash → any bash on PATH.
  *
- * The historical name is retained because callers and environment variables
- * use the Git Bash terminology. Niubash is compatible with the same `-c`
- * execution contract and can be selected with CCLITE_USE_NIUBASH=1,
- * CCLITE_NIUBASH_PATH, or automatically when launched inside Niubash.
+ * Niubash is picked up automatically whenever it is installed (on PATH, via
+ * the `niu` launcher, or in a conventional install root), so a plain
+ * PowerShell/cmd launch still benefits from it. `CCLITE_USE_NIUBASH=0`
+ * forces Git Bash; `CCLITE_NIUBASH_PATH` / `CCLITE_BASH_PATH` /
+ * `CLAUDE_CODE_GIT_BASH_PATH` remain explicit overrides. Linux and macOS
+ * never reach this code — setShellIfWindows() is Windows-only.
  */
-export const findGitBashPath = memoize((): string => {
+export const tryFindPosixShell = memoize((): string | null => {
   if (process.env.CLAUDE_CODE_GIT_BASH_PATH) {
     if (checkPathExists(process.env.CLAUDE_CODE_GIT_BASH_PATH)) {
       return process.env.CLAUDE_CODE_GIT_BASH_PATH
@@ -174,10 +293,8 @@ export const findGitBashPath = memoize((): string => {
     return process.env.CCLITE_BASH_PATH
   }
 
-  if (shouldPreferNiubash()) {
-    const niubashPath = findNiubashPath()
-    if (niubashPath) return niubashPath
-  }
+  const niubashPath = findNiubashPath()
+  if (niubashPath) return niubashPath
 
   const gitPath = findExecutable('git')
   if (gitPath) {
@@ -190,11 +307,37 @@ export const findGitBashPath = memoize((): string => {
   // Last resort: accept a Bash executable already exposed on PATH. This also
   // covers portable Bash installations when Git is not installed.
   const bashPath = findExecutable('bash')
-  if (bashPath && checkPathExists(bashPath)) return bashPath
+  if (bashPath && !isWslBashStub(bashPath) && checkPathExists(bashPath)) {
+    return bashPath
+  }
+
+  return null
+})
+
+/**
+ * Whether a POSIX shell is available on this machine. Non-Windows platforms
+ * always use their system shell, so they are never affected.
+ */
+export function hasPosixShell(): boolean {
+  if (process.platform !== 'win32') return true
+  return tryFindPosixShell() !== null
+}
+
+/**
+ * Find the Windows Bash-compatible executable used by BashTool.
+ *
+ * The historical name is retained because callers and environment variables
+ * use the Git Bash terminology. Resolution order lives in tryFindPosixShell();
+ * this wrapper keeps the old "throw a loud error when nothing is found"
+ * contract for code paths that cannot degrade (e.g. bash hooks).
+ */
+export const findGitBashPath = memoize((): string => {
+  const found = tryFindPosixShell()
+  if (found) return found
 
   // biome-ignore lint/suspicious/noConsole:: intentional console output
   console.error(
-    'CC-lite on Windows requires a POSIX-compatible Bash shell (Git Bash or Niubash). If installed but not in PATH, set CCLITE_BASH_PATH or CLAUDE_CODE_GIT_BASH_PATH to its bash.exe.',
+    'CC-lite on Windows requires a POSIX-compatible Bash shell (Niubash or Git Bash) for this command. If installed but not in PATH, set CCLITE_NIUBASH_PATH, CCLITE_BASH_PATH or CLAUDE_CODE_GIT_BASH_PATH to its bash.exe.',
   )
   // eslint-disable-next-line custom-rules/no-process-exit
   process.exit(1)

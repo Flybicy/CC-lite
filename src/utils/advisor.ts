@@ -2,19 +2,24 @@
 // Config
 // ---------------------------------------------------------------------------
 
-import { isTierBound } from './providers/providerRegistry.js'
+import { isTierBound, resolveAdvisorProvider } from './providers/providerRegistry.js'
 import { isTierAlias } from './model/aliases.js'
 import { resolveModelProfileModel } from './model/modelProfiles.js'
 
 /**
- * The Advisor model. The advisor rides the same tier as the main loop: when
- * `opus` is bound it gets 'opus', so an opus→sonnet→haiku downgrade carries the
- * advisor down with it. A bound-but-orphaned `sonnet` (no opus) still works for
- * setups that configure the advisor alone.
+ * The Advisor model, in priority order:
+ * 1. `CLAUDE_CODE_ADVISOR_MODEL` — explicit env override (headless/scripts).
+ * 2. The dedicated Advisor slot in providers.json (WebUI「辅助能力 → 顾问模型」).
+ *    The slot carries its own provider, so the advisor runs on a different
+ *    backend than the main loop when configured that way.
+ * 3. Opus tier, so an opus→sonnet→haiku downgrade carries the advisor with it.
+ * 4. A bound-but-orphaned sonnet tier (advisor-only setups).
+ * 5. modelProfiles.advisor.model.
  */
 export function getAdvisorModel(): string | undefined {
   return (
     process.env.CLAUDE_CODE_ADVISOR_MODEL?.trim() ||
+    resolveAdvisorProvider()?.model ||
     (isTierBound('opus') ? 'opus' : undefined) ||
     (isTierBound('sonnet') ? 'sonnet' : undefined) ||
     resolveModelProfileModel('advisor') ||
@@ -42,6 +47,11 @@ type TierSessionExtras = {
 export function getSessionAdvisorModel(
   sessionExtras: TierSessionExtras | undefined,
 ): string | undefined {
+  // A dedicated Advisor slot is explicit configuration pinned to its own
+  // provider — failover on the main loop must not drag the advisor off it.
+  if (!process.env.CLAUDE_CODE_ADVISOR_MODEL?.trim() && resolveAdvisorProvider()) {
+    return getAdvisorModel()
+  }
   const current = sessionExtras?.ccLiteTierCurrent
   const home = sessionExtras?.ccLiteTierHome
   if (current && isTierAlias(current)) {
@@ -59,6 +69,7 @@ export function getAdvisorModelFromProfiles(
 ): string | undefined {
   return (
     process.env.CLAUDE_CODE_ADVISOR_MODEL?.trim() ||
+    resolveAdvisorProvider()?.model ||
     (isTierBound('opus') ? 'opus' : undefined) ||
     (isTierBound('sonnet') ? 'sonnet' : undefined) ||
     modelProfiles?.advisor?.model ||

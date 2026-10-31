@@ -188,6 +188,16 @@ export function GlobalKeybindingHandlers({
   useKeybinding('app:toggleTranscript', handleToggleTranscript, {
     context: 'Global'
   });
+
+  // Fullscreen right rail: project snapshot + task list.
+  useKeybinding('app:toggleSidebar', () => {
+    setAppState(prev_4 => ({
+      ...prev_4,
+      showRightSidebar: !prev_4.showRightSidebar
+    }));
+  }, {
+    context: 'Global'
+  });
   if (feature('KAIROS') || feature('KAIROS_BRIEF')) {
     // biome-ignore lint/correctness/useHookAtTopLevel: feature() is a compile-time constant
     useKeybinding('app:toggleBrief', handleToggleBrief, {

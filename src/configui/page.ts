@@ -116,7 +116,8 @@ const CALL_TIERS = [
 // 只支持 /images/generations 生成，没有图片理解能力；反过来 GPT-4o 类
 // 模型能看图但不一定能画图。两者在 UI 和配置里必须分开绑。
 const AUX_TIERS = [
-  { key:'vision', name:'视觉辅助', desc:'为纯文本主模型配置视觉辅助——需要支持图片输入的多模态模型。三档任一选“使用视觉辅助”后，图片会交给它解析（ViewImage 工具）' }
+  { key:'vision', name:'视觉辅助', desc:'为纯文本主模型配置视觉辅助——需要支持图片输入的多模态模型。三档任一选“使用视觉辅助”后，图片会交给它解析（ViewImage 工具）' },
+  { key:'advisor', name:'顾问模型', desc:'Advisor 子代理专用槽位——不走主循环档位。留空则跟随 opus 档；绑定后顾问请求直接用这里的提供商与模型（可配更便宜或更强的第二意见模型）' }
 ]
 const TIERS = CALL_TIERS.concat(AUX_TIERS)
 var CFG = { providers:[], tiers:{} }
@@ -199,7 +200,7 @@ function renderTierGroup(tiers){
       + '<div><label>提供商</label><select id="tier_prov_'+t.key+'" data-tier="'+t.key+'">'+provOpts+'</select></div>'
       + '<div><label>模型</label><input id="tier_model_'+t.key+'" list="list_'+t.key+'" placeholder="模型名，如 gpt-4o / deepseek-chat" value="'+(b ? esc(b.model) : '')+'">'
       + '<datalist id="list_'+t.key+'">'+modelOptionsFor(b ? b.providerId : '')+'</datalist></div>'
-      + (t.key === 'vision' ? '' : '<div><label>图片处理</label><select id="tier_img_' + t.key + '"><option value="native"' + ((b && (b.images||'native')==='native') ? ' selected' : '') + '>处理原图（模型自带视觉）</option><option value="assist"' + (b && b.images==='assist' ? ' selected' : '') + '>使用视觉辅助模型</option></select></div>')
+      + ((t.key === 'vision' || t.key === 'advisor') ? '' : '<div><label>图片处理</label><select id="tier_img_' + t.key + '"><option value="native"' + ((b && (b.images||'native')==='native') ? ' selected' : '') + '>处理原图（模型自带视觉）</option><option value="assist"' + (b && b.images==='assist' ? ' selected' : '') + '>使用视觉辅助模型</option></select></div>')
       + (t.key === 'vision' ? '' : '<div><label>上下文（K，留空=200）</label><input id="tier_ctx_'+t.key+'" type="number" min="1" step="1" placeholder="200 / 1000" value="'+(b && b.contextWindow ? Math.round(b.contextWindow/1000) : '')+'"></div>')
       + '</div>'
   }).join('')
@@ -306,7 +307,7 @@ async function saveTiers(){
     if (pid && !model){ toast(t.key + ' 选了提供商，请填模型名','err'); return }
     const isAux = (t.key === 'vision')
     const ctxRaw = isAux ? '' : \$('tier_ctx_'+t.key).value.trim()
-    const imgMode = isAux ? undefined : \$('tier_img_'+t.key).value
+    const imgMode = (t.key === 'vision' || t.key === 'advisor') ? undefined : \$('tier_img_'+t.key).value
     const ctx = ctxRaw ? parseInt(ctxRaw, 10) * 1000 : NaN
     if (ctxRaw && (!Number.isInteger(ctx) || ctx <= 0)){ toast(t.key + ' 上下文窗口必须是正整数（单位：K，200 = 200K tokens）','err'); return }
     body[t.key] = pid ? { providerId:pid, model:model, ...(ctxRaw ? { contextWindow: ctx } : {}), ...(imgMode ? { images: imgMode } : {}) } : null

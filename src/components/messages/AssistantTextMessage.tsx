@@ -7,6 +7,7 @@ import { BLACK_CIRCLE } from '../../constants/figures.js';
 import { Box, NoSelect, Text } from '../../ink.js';
 import { API_ERROR_MESSAGE_PREFIX, API_TIMEOUT_ERROR_MESSAGE, CREDIT_BALANCE_TOO_LOW_ERROR_MESSAGE, CUSTOM_OFF_SWITCH_MESSAGE, INVALID_API_KEY_ERROR_MESSAGE, INVALID_API_KEY_ERROR_MESSAGE_EXTERNAL, ORG_DISABLED_ERROR_MESSAGE_ENV_KEY, PROMPT_TOO_LONG_ERROR_MESSAGE, startsWithApiErrorPrefix } from '../../services/api/errors.js';
 import { isEmptyMessageText, NO_RESPONSE_REQUESTED } from '../../utils/messages.js';
+import { stripAcpTags } from '../../services/acp/stage.js';
 import { getUpgradeMessage } from '../../utils/model/contextWindowUpgradeCheck.js';
 import { getDefaultSonnetModel, renderModelName } from '../../utils/model/model.js';
 import { isMacOsKeychainLocked } from '../../utils/secureStorage/macOsKeychainStorage.js';
@@ -54,8 +55,9 @@ export function AssistantTextMessage(t0) {
     onOpenRateLimitOptions
   } = t0;
   const {
-    text
+    text: rawText
   } = t1;
+  const text = stripAcpTags(rawText);
   const isSelected = useContext(MessageActionsSelectedContext);
   if (isEmptyMessageText(text)) {
     return null;

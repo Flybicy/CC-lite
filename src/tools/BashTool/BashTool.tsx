@@ -30,7 +30,8 @@ import { lazySchema } from '../../utils/lazySchema.js';
 import { expandPath } from '../../utils/path.js';
 import type { PermissionResult } from '../../utils/permissions/PermissionResult.js';
 import { maybeRecordPluginHint } from '../../utils/plugins/hintRecommendation.js';
-import { exec } from '../../utils/Shell.js';
+import { exec } from '../../utils/Shell.js'
+import { hasPosixShell } from '../../utils/windowsPaths.js';
 import type { ExecResult } from '../../utils/ShellCommand.js';
 import { SandboxManager } from '../../utils/sandbox/sandbox-adapter.js';
 import { semanticBoolean } from '../../utils/semanticBoolean.js';
@@ -425,6 +426,14 @@ export const BashTool = buildTool({
   // 30K chars - tool result persistence threshold
   maxResultSizeChars: 30_000,
   strict: true,
+  /**
+   * Windows without any POSIX shell (no Niubash, no Git Bash) has nothing to
+   * run `command` with. Hide the tool instead of failing every call so the
+   * PowerShell tool can take over; other platforms always keep it.
+   */
+  isEnabled() {
+    return hasPosixShell();
+  },
   async description({
     description
   }) {

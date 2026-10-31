@@ -49,6 +49,9 @@ import type {
   SystemAPIErrorMessage,
   UserMessage,
 } from '../../types/message.js'
+import { noteAcpRequestUsage } from '../acp/config.js'
+import { recordAcpRequest } from '../acp/ledger.js'
+import { getLastAcpTokenCount } from '../acp/stage.js'
 import {
   type CacheScope,
   logAPIPrefix,
@@ -230,7 +233,10 @@ import { withStreamingVCR, withVCR } from '../vcr.js'
 import { CLIENT_REQUEST_ID_HEADER, getAnthropicClient } from './client.js'
 import { isTierAlias } from '../../utils/model/aliases.js'
 import { tierForQuerySource } from '../../utils/providers/providerRegistry.js'
-import { tierNeeds1mBetaHeader } from '../../utils/providers/tierResolver.js'
+import {
+  tierNeeds1mBetaHeader,
+  resolveAdvisorConnection,
+} from '../../utils/providers/tierResolver.js'
 import {
   API_ERROR_MESSAGE_PREFIX,
   CUSTOM_OFF_SWITCH_MESSAGE,
@@ -452,6 +458,10 @@ function configureEffortParams(
 
   if (effortValue === undefined) {
     betas.push(EFFORT_BETA_HEADER)
+  } else if (effortValue === 'none') {
+    // "none" = thinking off: leave output_config.effort unset so gateways that
+    // reject unknown effort strings still accept the request.
+    return
   } else if (typeof effortValue === 'string') {
     // Send string effort level as is
     outputConfig.effort = effortValue
@@ -1127,7 +1137,13 @@ async function* queryModel(
       options.tierCodename && isTierAlias(options.tierCodename)
         ? options.tierCodename
         : tierForQuerySource(options.querySource)
-    if (tierNeeds1mBetaHeader(betaTier)) {
+    const advisorConn =
+      options.querySource === 'advisor' ? resolveAdvisorConnection() : null
+    const needs1m = advisorConn
+      ? advisorConn.type === 'anthropic' &&
+        (advisorConn.contextWindow ?? 0) > 200_000
+      : tierNeeds1mBetaHeader(betaTier)
+    if (needs1m) {
       betas.push(CONTEXT_1M_BETA_HEADER)
     }
   }
@@ -1618,7 +1634,9 @@ async function* queryModel(
 
     const hasThinking =
       thinkingConfig.type !== 'disabled' &&
-      !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_THINKING)
+      !isEnvTruthy(process.env.CLAUDE_CODE_DISABLE_THINKING) &&
+      options.effortValue !== 'none' &&
+      effort !== 'none'
     let thinking: BetaMessageStreamParams['thinking'] | undefined = undefined
 
     // IMPORTANT: Do not change the adaptive-vs-budget thinking selection below
@@ -2251,6 +2269,25 @@ async function* queryModel(
               lastMsg.message.usage = usage
               lastMsg.message.stop_reason = stopReason
             }
+
+            // ACP: learn the fixed per-request overhead (system prompt + tool
+            // schemas) from the billed prompt size, so the compression
+            // thresholds are computed against the conversation budget rather
+            // than the raw window. Guarded by a token count > 0 to skip turns
+            // where the stage never ran (ACP disabled, no messages).
+            noteAcpRequestUsage(
+              (usage.input_tokens ?? 0) +
+                (usage.cache_read_input_tokens ?? 0) +
+                (usage.cache_creation_input_tokens ?? 0),
+              getLastAcpTokenCount(),
+            )
+            recordAcpRequest({
+              ts: Date.now(),
+              input: usage.input_tokens ?? 0,
+              cacheRead: usage.cache_read_input_tokens ?? 0,
+              cacheCreate: usage.cache_creation_input_tokens ?? 0,
+              conversation: getLastAcpTokenCount(),
+            })
 
             // Update cost
             const costUSDForPart = calculateUSDCost(resolvedModel, usage)

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
   getProviderConfigPath,
+  getTierWindowFloor,
   isProviderRoutingActive,
   isTierBound,
   loadProviderConfig,
@@ -168,5 +169,58 @@ describe('providerRegistry', () => {
     expect(cfg.providers).toHaveLength(1)
     expect(cfg.tiers.opus?.model).toBe('gpt-4o-mini')
     expect(resolveTierProvider('opus')?.model).toBe('gpt-4o-mini')
+  })
+})
+
+describe('getTierWindowFloor', () => {
+  it('takes the smallest window claimed for the same provider+model pair', () => {
+    const cfg: ProviderConfig = {
+      ...SAMPLE,
+      tiers: {
+        opus: {
+          providerId: 'openai-main',
+          model: 'gpt-4o',
+          contextWindow: 200_000,
+        },
+        sonnet: {
+          providerId: 'openai-main',
+          model: 'gpt-4o',
+          contextWindow: 500_000,
+        },
+        haiku: {
+          providerId: 'openai-main',
+          model: 'gpt-4o-mini',
+          contextWindow: 32_000,
+        },
+      },
+    }
+    expect(getTierWindowFloor('openai-main', 'gpt-4o', cfg)).toBe(200_000)
+    expect(getTierWindowFloor('openai-main', 'gpt-4o-mini', cfg)).toBe(32_000)
+  })
+
+  it('returns undefined when no binding declares a window', () => {
+    const cfg: ProviderConfig = {
+      ...SAMPLE,
+      tiers: {
+        opus: { providerId: 'openai-main', model: 'gpt-4o' },
+        sonnet: { providerId: 'openai-main', model: 'gpt-4o' },
+      },
+    }
+    expect(getTierWindowFloor('openai-main', 'gpt-4o', cfg)).toBeUndefined()
+  })
+
+  it('ignores bindings belonging to another provider or model', () => {
+    const cfg: ProviderConfig = {
+      ...SAMPLE,
+      tiers: {
+        opus: {
+          providerId: 'openai-main',
+          model: 'gpt-4o',
+          contextWindow: 400_000,
+        },
+      },
+    }
+    expect(getTierWindowFloor('local-lm', 'gpt-4o', cfg)).toBeUndefined()
+    expect(getTierWindowFloor('openai-main', 'gpt-4o-mini', cfg)).toBeUndefined()
   })
 })

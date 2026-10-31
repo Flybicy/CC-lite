@@ -15,6 +15,7 @@
 
 import {
   resolveTierProvider,
+  resolveAdvisorProvider,
   normalizeTierName,
   tierForQuerySource,
   TIER_TO_SCOPE,
@@ -42,6 +43,8 @@ export interface TierConnection {
   apiMode?: ProviderApiMode
   /** 'native' (default) or 'assist' — image routing for this tier. */
   images?: 'native' | 'assist'
+  /** Aux slots only: explicit context window (tokens) from the binding. */
+  contextWindow?: number
 }
 
 export interface TierEnvFallback {
@@ -74,6 +77,33 @@ export function tierNeeds1mBetaHeader(tier: ModelTier): boolean {
   if (conn.source !== 'routing' || conn.type !== 'anthropic') return false
   // 200K is the pre-beta Anthropic default; anything above needs the header.
   return (resolveTierContextWindow(tier) ?? 0) > 200_000
+}
+
+/**
+ * Dedicated Advisor slot → connection. Returns null when unbound so the
+ * caller keeps the legacy behaviour (advisor rides the main-loop tier).
+ */
+export function resolveAdvisorConnection(
+  cfg?: Parameters<typeof resolveAdvisorProvider>[0],
+): TierConnection | null {
+  const resolved = resolveAdvisorProvider(cfg)
+  if (!resolved) return null
+  const { provider, model, contextWindow } = resolved
+  return {
+    source: 'routing',
+    // The slot is not a call tier; report the tier the advisor would have
+    // inherited so downstream ModelTier consumers keep working.
+    tier: 'opus',
+    scope: 'advisor',
+    type: provider.type,
+    baseURL: provider.baseURL,
+    apiKey: provider.apiKey,
+    model,
+    headers: provider.headers,
+    apiMode: provider.apiMode === 'auto' ? undefined : provider.apiMode,
+    images: 'native',
+    ...(contextWindow !== undefined ? { contextWindow } : {}),
+  }
 }
 
 /** Resolve connection details for an explicit tier. */

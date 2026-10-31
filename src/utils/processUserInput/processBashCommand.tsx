@@ -10,6 +10,7 @@ import { logEvent } from '../../services/analytics-stub.js';
 import { errorMessage, ShellError } from '../errors.js';
 import { createSyntheticUserCaveatMessage, createUserInterruptionMessage, createUserMessage, prepareUserContent } from '../messages.js';
 import { resolveDefaultShell } from '../shell/resolveDefaultShell.js';
+import { hasPosixShell } from '../windowsPaths.js';
 import { isPowerShellToolEnabled } from '../shell/shellToolUtils.js';
 import { processToolResultBlock } from '../toolResultStorage.js';
 import { escapeXml } from '../xml.js';
@@ -23,7 +24,11 @@ export async function processBashCommand(inputString: string, precedingInputBloc
   // same platform + env-var gate as tools.ts so input-box routing matches
   // tool-list visibility. Computed up front so telemetry records the
   // actual shell, not the raw setting.
-  const usePowerShell = isPowerShellToolEnabled() && resolveDefaultShell() === 'powershell';
+  // No POSIX shell on this machine (Windows without Niubash/Git Bash): route
+  // `!` commands to PowerShell even if defaultShell is still 'bash'.
+  const usePowerShell =
+    isPowerShellToolEnabled() &&
+    (resolveDefaultShell() === 'powershell' || !hasPosixShell());
   logEvent('tengu_input_bash', {
     powershell: usePowerShell
   });

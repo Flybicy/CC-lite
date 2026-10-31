@@ -3,6 +3,7 @@ import {
   EFFORT_LOW,
   EFFORT_MAX,
   EFFORT_MEDIUM,
+  EFFORT_NONE,
 } from '../constants/figures.js'
 import {
   type EffortLevel,
@@ -33,6 +34,7 @@ export function getEffortNotificationText(
 
 export function effortLevelToSymbol(level: EffortLevel): string {
   switch (level) {
+    case 'none': return EFFORT_NONE
     case 'low': return EFFORT_LOW
     case 'medium': return EFFORT_MEDIUM
     case 'high': return EFFORT_HIGH

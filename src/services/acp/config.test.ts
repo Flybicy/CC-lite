@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import {
   ACP_DEFAULT_CONTEXT_LIMIT,
+  ACP_DEFAULT_OVERHEAD_TOKENS,
+  buildAcpConfig,
   getAcpContextLimit,
   pickAcpContextLimit,
+  resetAcpOverheadEstimate,
   setAcpModelHint,
 } from './config.js'
 import { getAcpSession, resetAcpSession } from './session.js'
@@ -85,6 +88,7 @@ describe('getAcpSession window changes', () => {
   })
 
   test('keeps folded state when the window changes', () => {
+    resetAcpOverheadEstimate()
     process.env[ENV] = '500000'
     const first = getAcpSession()
     expect(first.limit).toBe(500_000)
@@ -97,7 +101,18 @@ describe('getAcpSession window changes', () => {
     expect(second.state).toBe(first.state)
     expect(second.core).toBe(first.core)
     expect(second.contentStore).toBe(first.contentStore)
-    expect(second.config.modelContextLimit).toBe(1_000_000)
+    expect(second.config.modelContextLimit).toBe(
+      1_000_000,
+    )
     expect(second.state.stats.tokensCompressed).toBe(1234)
+  })
+})
+
+describe('buildAcpConfig thresholds', () => {
+  test('nudges earlier than the kernel defaults', () => {
+    const cfg = buildAcpConfig(500_000)
+    expect(cfg.nudge.minContextLimitPct).toBe(0.4)
+    expect(cfg.nudge.maxContextLimitPct).toBe(0.7)
+    expect(cfg.nudge.emergencyThresholdPct).toBe(0.85)
   })
 })

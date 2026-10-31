@@ -1,4 +1,7 @@
-import { beforeEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { getAcpSession, resetAcpSession } from './session.js'
 import { applyAcpStage } from './stage.js'
 import { CompressTool } from './tools.js'
@@ -53,8 +56,22 @@ function conversation(turns: number): CcMessage[] {
   return out
 }
 
+let acpTestDir = ''
+let acpPrevStateDir: string | undefined
+
 beforeEach(() => {
+  // Keep snapshot persistence inside a throwaway directory, never the repo's
+  // .cclite/acp nor the developer's real ~/.claude/acp.
+  acpTestDir = mkdtempSync(join(tmpdir(), 'cclite-acp-test-'))
+  acpPrevStateDir = process.env.CCLITE_ACP_STATE_DIR
+  process.env.CCLITE_ACP_STATE_DIR = join(acpTestDir, 'acp')
   resetAcpSession()
+})
+
+afterEach(() => {
+  if (acpPrevStateDir === undefined) delete process.env.CCLITE_ACP_STATE_DIR
+  else process.env.CCLITE_ACP_STATE_DIR = acpPrevStateDir
+  rmSync(acpTestDir, { recursive: true, force: true })
 })
 
 describe('translate', () => {

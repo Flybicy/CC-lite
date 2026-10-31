@@ -134,6 +134,11 @@ export const TierMapSchema = z
     // text-only, ViewImage routes image understanding here so the model
     // still gets "eyes".
     vision: TierBindingSchema.optional(),
+    // Not a call tier: dedicated Advisor slot. When bound, AdvisorTool's
+    // inner query() runs on this provider+model instead of riding the
+    // main-loop tier, so the reviewer can be a different (e.g. cheaper or
+    // stronger) model on a different provider.
+    advisor: TierBindingSchema.optional(),
   })
   .default({})
 
@@ -202,6 +207,8 @@ function parseConfig(raw: unknown): ProviderConfig {
       const entry = legacy[TIER_TO_SCOPE[tier]]
       if (entry) tiers[tier] = entry
     }
+    // v1's standalone advisor slot maps onto today's aux advisor slot.
+    if (legacy.advisor) tiers.advisor = legacy.advisor
     return ProviderConfigSchema.parse({ ...rest, tiers })
   }
 
@@ -288,6 +295,35 @@ export function resolveTierProvider(
   // ^ normalized legacy names (pro/plus/se) land on the current tier keys.
 }
 
+/**
+ * Smallest explicit context window configured for one provider+model pair
+ * across every tier binding.
+ *
+ * A model has exactly one real window upstream, so two tiers claiming
+ * different numbers means at least one of them is wrong. Over-estimating is
+ * fatal — auto-compact and the ACP kernel both size their thresholds from this
+ * number, so a too-large window means neither ever fires and the relay answers
+ * "Prompt is too long" — while under-estimating only compresses a bit early.
+ * The conservative value therefore wins.
+ */
+export function getTierWindowFloor(
+  providerId: string,
+  model: string,
+  cfg: ProviderConfig = loadProviderConfig(),
+): number | undefined {
+  let floor: number | undefined
+  for (const tier of MODEL_TIERS) {
+    const binding = cfg.tiers?.[tier]
+    if (!binding || binding.providerId !== providerId) continue
+    if ((getTierModelOverride(tier) ?? binding.model) !== model) continue
+    const window = binding.contextWindow
+    if (typeof window === 'number' && window > 0) {
+      floor = floor === undefined ? window : Math.min(floor, window)
+    }
+  }
+  return floor
+}
+
 /** Resolved aux-slot binding (vision provider). */
 export interface ResolvedImageProvider {
   provider: ProviderEntry
@@ -305,6 +341,24 @@ export function resolveVisionProvider(
   return { provider, model: binding.model }
 }
 
+
+/** Resolved aux-slot binding (dedicated advisor). */
+export interface ResolvedAdvisorProvider {
+  provider: ProviderEntry
+  model: string
+  contextWindow?: number
+}
+
+/** Resolve the dedicated Advisor slot, or null when unbound. */
+export function resolveAdvisorProvider(
+  cfg: ProviderConfig = loadProviderConfig(),
+): ResolvedAdvisorProvider | null {
+  const binding = cfg.tiers?.advisor
+  if (!binding) return null
+  const provider = cfg.providers.find(p => p.id === binding.providerId)
+  if (!provider) return null
+  return { provider, model: binding.model, contextWindow: binding.contextWindow }
+}
 
 /** Legacy entry point: resolve by scope name instead of tier codename. */
 export function resolveScopeProvider(

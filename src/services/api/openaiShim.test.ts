@@ -207,3 +207,31 @@ describe('OpenAI shim request controls', () => {
     }
   })
 })
+
+describe('openaiStreamToAnthropic usage mapping', () => {
+  it('maps gateway cache reads into Anthropic usage fields', async () => {
+    const response = sseResponse([
+      { choices: [{ index: 0, delta: { content: 'hi' }, finish_reason: 'stop' }] },
+      {
+        choices: [],
+        usage: {
+          prompt_tokens: 2387,
+          completion_tokens: 8,
+          prompt_cache_hit_tokens: 2176,
+          cache_read_input_tokens: 2176,
+          prompt_tokens_details: { cached_tokens: 2176 },
+        },
+      },
+    ])
+
+    const events = await collect(openaiStreamToAnthropic(response, 'm'))
+    const deltas = events.filter(
+      e => (e as { type: string }).type === 'message_delta',
+    ) as Array<{ usage?: { input_tokens?: number; cache_read_input_tokens?: number; output_tokens?: number } }>
+    const delta = deltas.at(-1)
+
+    expect(delta?.usage?.cache_read_input_tokens).toBe(2176)
+    expect(delta?.usage?.input_tokens).toBe(211)
+    expect(delta?.usage?.output_tokens).toBe(8)
+  })
+})

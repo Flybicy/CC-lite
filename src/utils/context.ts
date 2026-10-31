@@ -6,7 +6,11 @@ import { getCanonicalName } from './model/model.js'
 import { getModelCapability } from './model/modelCapabilities.js'
 import { resolveModelProfileContext, type ModelScope } from './model/modelProfiles.js'
 import { isTierAlias } from './model/aliases.js'
-import { SCOPE_TO_TIER } from './providers/providerRegistry.js'
+import {
+  SCOPE_TO_TIER,
+  getTierWindowFloor,
+  resolveTierProvider,
+} from './providers/providerRegistry.js'
 import { resolveTierContextWindow } from './providers/tierResolver.js'
 
 // Model context window size (200k tokens for all models right now)
@@ -78,9 +82,37 @@ export function getContextWindowForModel(
   // without this they are always treated as 200K even when the upstream
   // supports 1M (Gemini, Claude relays, ...). A codename flowing through as
   // `model` maps directly to its tier; a resolved model id maps via scope.
-  const tierWindow = resolveTierContextWindow(
+  //
+  // A codename is NOT a model. When several tiers bind the same real model the
+  // upstream still has exactly one window, so clamp to the smallest claim: a
+  // window that is too large disables every "running out of room" trigger
+  // (auto-compact, the ACP kernel) and the request then dies upstream with
+  // "Prompt is too long", while one that is too small only compresses slightly
+  // early.
+  let tierWindow = resolveTierContextWindow(
     isTierAlias(model) ? model : SCOPE_TO_TIER[scope],
   )
+  if (isTierAlias(model)) {
+    const binding = resolveTierProvider(model)
+    if (binding) {
+      const floor = getTierWindowFloor(binding.provider.id, binding.model)
+      if (floor !== undefined) {
+        tierWindow =
+          tierWindow === undefined ? floor : Math.min(tierWindow, floor)
+      }
+      // No explicit window anywhere: use the bound model's own capability
+      // instead of falling through to the generic 200K default.
+      if (tierWindow === undefined) {
+        const boundCap = getModelCapability(binding.model)
+        if (
+          boundCap?.max_input_tokens &&
+          boundCap.max_input_tokens >= 100_000
+        ) {
+          tierWindow = boundCap.max_input_tokens
+        }
+      }
+    }
+  }
   if (tierWindow !== undefined) {
     if (tierWindow > MODEL_CONTEXT_WINDOW_DEFAULT && is1mContextDisabled()) {
       return MODEL_CONTEXT_WINDOW_DEFAULT

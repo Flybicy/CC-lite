@@ -139,6 +139,7 @@ export async function processUserInput({
   skipAttachments?: boolean
 }): Promise<ProcessUserInputBaseResult> {
   const inputString = typeof input === 'string' ? input : null
+
   // Immediately show the user input prompt while we are still processing the input.
   // Skip for isMeta (system-generated prompts like scheduled tasks) — those
   // should run invisibly.

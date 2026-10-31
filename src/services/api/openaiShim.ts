@@ -504,6 +504,10 @@ interface OpenAIStreamChunk {
     prompt_tokens?: number
     completion_tokens?: number
     total_tokens?: number
+    cache_read_input_tokens?: number
+    cache_creation_input_tokens?: number
+    prompt_cache_hit_tokens?: number
+    prompt_tokens_details?: { cached_tokens?: number }
   }
 }
 
@@ -511,16 +515,34 @@ function makeMessageId(): string {
   return `msg_${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`
 }
 
+type OpenAIUsageLike = OpenAIStreamChunk['usage']
+
+/**
+ * OpenAI-compatible gateways report prompt caching in several dialects:
+ * Anthropic-style cache_* fields, DeepSeek's prompt_cache_hit_tokens, or
+ * OpenAI's prompt_tokens_details.cached_tokens. Anthropic's API separates
+ * cached tokens out of input_tokens, so subtract to keep totals consistent.
+ */
+function readCachedPromptTokens(usage: OpenAIUsageLike): number {
+  return (
+    usage?.cache_read_input_tokens ??
+    usage?.prompt_cache_hit_tokens ??
+    usage?.prompt_tokens_details?.cached_tokens ??
+    0
+  )
+}
+
 function convertChunkUsage(
-  usage: OpenAIStreamChunk['usage'] | undefined,
+  usage: OpenAIUsageLike | undefined,
 ): Partial<AnthropicUsage> | undefined {
   if (!usage) return undefined
+  const cached = readCachedPromptTokens(usage)
 
   return {
-    input_tokens: usage.prompt_tokens ?? 0,
+    input_tokens: Math.max(0, (usage.prompt_tokens ?? 0) - cached),
     output_tokens: usage.completion_tokens ?? 0,
-    cache_creation_input_tokens: 0,
-    cache_read_input_tokens: 0,
+    cache_creation_input_tokens: usage.cache_creation_input_tokens ?? 0,
+    cache_read_input_tokens: cached,
   }
 }
 
@@ -1068,6 +1090,13 @@ class OpenAIShimMessages {
       chatCompletionsUrl = `${request.baseUrl}/chat/completions`
     }
 
+    if (process.env.CCLITE_CACHE_DEBUG) {
+      const { appendFileSync } = await import('node:fs')
+      appendFileSync(
+        process.env.CCLITE_CACHE_DEBUG,
+        JSON.stringify({ ts: Date.now(), body }) + '\n',
+      )
+    }
     const response = await fetchWithRequestTimeout(
       chatCompletionsUrl,
       {
@@ -1107,6 +1136,10 @@ class OpenAIShimMessages {
       usage?: {
         prompt_tokens?: number
         completion_tokens?: number
+        cache_creation_input_tokens?: number
+        cache_read_input_tokens?: number
+        prompt_cache_hit_tokens?: number
+        prompt_tokens_details?: { cached_tokens?: number }
       }
     },
     model: string,
@@ -1152,10 +1185,13 @@ class OpenAIShimMessages {
       stop_reason: stopReason,
       stop_sequence: null,
       usage: {
-        input_tokens: data.usage?.prompt_tokens ?? 0,
+        input_tokens: Math.max(
+          0,
+          (data.usage?.prompt_tokens ?? 0) - readCachedPromptTokens(data.usage),
+        ),
         output_tokens: data.usage?.completion_tokens ?? 0,
-        cache_creation_input_tokens: 0,
-        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: data.usage?.cache_creation_input_tokens ?? 0,
+        cache_read_input_tokens: readCachedPromptTokens(data.usage),
       },
     }
   }

@@ -94,6 +94,8 @@ export type AppState = DeepImmutable<{
   statusLineText: string | undefined
   expandedView: 'none' | 'tasks' | 'teammates'
   isBriefOnly: boolean
+  /** Fullscreen right rail (project + tasks). Toggled with ctrl+shift+s. */
+  showRightSidebar: boolean
   // Optional - only present when ENABLE_AGENT_SWARMS is true (for dead code elimination)
   showTeammateMessagePreview?: boolean
   selectedIPAgentIndex: number
@@ -475,6 +477,7 @@ export function getDefaultAppState(): AppState {
     statusLineText: undefined,
     expandedView: 'none',
     isBriefOnly: false,
+    showRightSidebar: true,
     showTeammateMessagePreview: false,
     selectedIPAgentIndex: -1,
     coordinatorTaskIndex: -1,

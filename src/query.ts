@@ -10,7 +10,10 @@ import {
   isAutoCompactEnabled,
   type AutoCompactTrackingState,
 } from './services/compact/autoCompact.js'
-import { buildPostCompactMessages } from './services/compact/compact.js'
+import {
+  buildPostCompactMessages,
+  truncateHeadForPTLRetry,
+} from './services/compact/compact.js'
 /* eslint-disable @typescript-eslint/no-require-imports */
 const reactiveCompact = feature('REACTIVE_COMPACT')
   ? (require('./services/compact/reactiveCompact.js') as typeof import('./services/compact/reactiveCompact.js'))
@@ -60,6 +63,7 @@ import { clearGoal, getGoal, GOAL_COMPLETE_MARKER, GOAL_JUDGE_EVERY, GOAL_MAX_RO
 import { judgeGoalCompletion } from './utils/goalJudge.js'
 import { prependUserContext, appendSystemContext } from './utils/api.js'
 import { isAcpEnabled, setAcpModelHint } from './services/acp/config.js'
+import { resetAcpSession } from './services/acp/session.js'
 import { getAcpSystemPrompt } from './services/acp/prompt.js'
 import { applyAcpStage } from './services/acp/stage.js'
 import { isTierAlias } from './utils/model/aliases.js'
@@ -248,6 +252,11 @@ type TierFallbackSessionExtras = {
   // Total automatic tier fallbacks this session. Capped at
   // MAX_TIER_FALLBACKS so a wedged gateway cannot ping-pong models forever.
   ccLiteFallbackRounds?: number
+  // When the last automatic fallback happened. A transient downgrade stays
+  // put for TIER_RESTORE_COOLDOWN_MS before we climb back: flipping models
+  // every other iteration re-prefills the whole conversation and turns a
+  // flaky head tier into a cache-busting loop.
+  ccLiteTierFallbackAt?: number
   // Where the chain actually sits right now (home or a degraded tier).
   // Tracked separately from home so a manual /model switch (startModel
   // differs from current) can be told apart from "we left the turn on a
@@ -257,6 +266,9 @@ type TierFallbackSessionExtras = {
 
 /** Maximum auto tier downgrades per session before we give up and error. */
 const MAX_TIER_FALLBACKS = 5
+
+/** Stay on a transiently degraded tier this long before retrying the head. */
+const TIER_RESTORE_COOLDOWN_MS = 10 * 60_000
 
 export async function* query(
   params: QueryParams,
@@ -325,6 +337,7 @@ async function* queryLoop(
       chainExtras.ccLiteTierCurrent = startModel
       chainExtras.ccLiteTierSticky = false
       chainExtras.ccLiteFallbackRounds = 0
+      chainExtras.ccLiteTierFallbackAt = undefined
     }
   }
 
@@ -337,7 +350,9 @@ async function* queryLoop(
     !chainExtras.ccLiteTierSticky &&
     chainExtras.ccLiteTierCurrent !== undefined &&
     chainExtras.ccLiteTierCurrent !== chainExtras.ccLiteTierHome &&
-    isTierAlias(chainExtras.ccLiteTierHome)
+    isTierAlias(chainExtras.ccLiteTierHome) &&
+    Date.now() - (chainExtras.ccLiteTierFallbackAt ?? 0) >=
+      TIER_RESTORE_COOLDOWN_MS
   ) {
     params.toolUseContext.options.mainLoopModel = chainExtras.ccLiteTierHome
     chainExtras.ccLiteTierCurrent = chainExtras.ccLiteTierHome
@@ -738,7 +753,9 @@ async function* queryLoop(
       state.pendingRestoreToChainHead &&
       state.tierCodenameOfCurrentChain &&
       chainExtras.ccLiteTierHome &&
-      state.tierCodenameOfCurrentChain !== chainExtras.ccLiteTierHome
+      state.tierCodenameOfCurrentChain !== chainExtras.ccLiteTierHome &&
+      Date.now() - (chainExtras.ccLiteTierFallbackAt ?? 0) >=
+        TIER_RESTORE_COOLDOWN_MS
     ) {
       toolUseContext.options.mainLoopModel = chainExtras.ccLiteTierHome
       chainExtras.ccLiteTierCurrent = chainExtras.ccLiteTierHome
@@ -1113,6 +1130,7 @@ async function* queryLoop(
             // `fallbackModel` is recomputed below into the NEXT hop for the
             // retry's own failover target.
             const switchedTo = fallbackModel
+            chainExtras.ccLiteTierFallbackAt = Date.now()
             // Count the round and, on balance errors, move the session's
             // home pointer forward so we never climb back to a tier whose
             // provider has no credit ("余额不足 → 切换了就不再换回来").
@@ -1341,6 +1359,41 @@ async function* queryLoop(
       const isWithheldMedia =
         mediaRecoveryEnabled &&
         reactiveCompact?.isWithheldMediaSizeError(lastMessage)
+      // ACP replaces auto-compact and REACTIVE_COMPACT is ant-only, so a
+      // non-ant build has no recovery at all once the upstream rejects an
+      // over-long prompt. Keep the session usable instead of dead-ending on
+      // "Prompt is too long": drop the oldest API rounds (deterministic, no
+      // extra model call), reset the ACP block state so it matches the
+      // shortened transcript, then retry once.
+      if (
+        isWithheld413 &&
+        lastMessage &&
+        acpEnabled &&
+        !reactiveCompact &&
+        !hasAttemptedReactiveCompact
+      ) {
+        const truncated = truncateHeadForPTLRetry(
+          messagesForQuery,
+          lastMessage,
+        )
+        if (truncated) {
+          resetAcpSession()
+          const retried: State = {
+            messages: truncated,
+            toolUseContext,
+            autoCompactTracking: tracking,
+            maxOutputTokensRecoveryCount,
+            hasAttemptedReactiveCompact: true,
+            maxOutputTokensOverride: undefined,
+            pendingToolUseSummary: undefined,
+            stopHookActive: undefined,
+            turnCount,
+            transition: { reason: 'acp_ptl_truncate_retry' },
+          }
+          state = retried
+          continue
+        }
+      }
       if (isWithheld413) {
         // First: drain all staged context-collapses. Gated on the PREVIOUS
         // transition not being collapse_drain_retry — if we already drained

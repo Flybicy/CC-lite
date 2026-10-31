@@ -25,8 +25,8 @@ import {
   type ProviderEntry,
 } from '../utils/providers/providerRegistry.js'
 
-// Aux slots（作图 / 视觉辅助）与三档同等持久化；删除提供商时也一起清绑。
-const TIER_KEYS = [...MODEL_TIERS, 'vision'] as const
+// Aux slots（视觉辅助 / 顾问模型）与三档同等持久化；删除提供商时也一起清绑。
+const TIER_KEYS = [...MODEL_TIERS, 'vision', 'advisor'] as const
 import { CONFIG_UI_PAGE } from './page.js'
 
 const HOST = '127.0.0.1'

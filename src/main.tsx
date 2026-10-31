@@ -942,7 +942,7 @@ async function run(): Promise<CommanderCommand> {
 
     profileCheckpoint('preAction_after_settings_sync');
   });
-  program.name('cclite').description(`CC-lite - starts an interactive session by default, use -p/--print for non-interactive output`).argument('[prompt]', 'Your prompt', String)
+  program.name('claude').description(`Claude Code - starts an interactive session by default, use -p/--print for non-interactive output`).argument('[prompt]', 'Your prompt', String)
   // Subcommands inherit helpOption via commander's copyInheritedSettings —
   // setting it once here covers mcp, plugin, auth, and all other subcommands.
   .helpOption('-h, --help', 'Display help for command').option('-d, --debug [filter]', 'Enable debug mode with optional category filtering (e.g., "api,hooks" or "!1p,!file")', (_value: string | true) => {
@@ -969,7 +969,7 @@ async function run(): Promise<CommanderCommand> {
   // @[MODEL LAUNCH]: Update the example model ID in the --model help text.
   .option('--model <model>', `Model for the current session (overrides /config model profile)`).addOption(new Option('--effort <level>', `Reasoning effort for the current session (overrides /config model profile)`).argParser((rawValue: string) => {
     const value = rawValue.toLowerCase();
-    const allowed = ['low', 'medium', 'high', 'max'];
+    const allowed = ['none', 'low', 'medium', 'high', 'max'];
     if (!allowed.includes(value)) {
       throw new InvalidArgumentError(`It must be one of: ${allowed.join(', ')}`);
     }
@@ -1990,8 +1990,9 @@ async function run(): Promise<CommanderCommand> {
     setInitialMainLoopModel(getUserSpecifiedModelSetting() || null);
     const initialMainLoopModel = getInitialMainLoopModel();
     const resolvedInitialModel = parseUserSpecifiedModel(initialMainLoopModel ?? getDefaultMainLoopModel());
-    // Advisor: configured via CLAUDE_CODE_ADVISOR_MODEL env var.
-    // claude.ts reads it directly; AdvisorTool reads it at call time.
+    // Advisor: providers.json tiers.advisor (WebUI「辅助能力 → 顾问模型」)
+    // or CLAUDE_CODE_ADVISOR_MODEL. claude.ts reads it directly; AdvisorTool
+    // reads it at call time via getSessionAdvisorModel().
 
     // For tmux teammates with --agent-type, append the custom agent's prompt
     if (isAgentSwarmsEnabled() && storedTeammateOpts?.agentId && storedTeammateOpts?.agentName && storedTeammateOpts?.teamName && storedTeammateOpts?.agentType) {

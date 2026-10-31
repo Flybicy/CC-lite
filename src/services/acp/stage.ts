@@ -18,7 +18,7 @@ import {
   type ProcessTurnResult,
 } from 'acp-kernel'
 import { isAcpEnabled } from './config.js'
-import { getAcpSession } from './session.js'
+import { getAcpSession, hydrateAcpSession, persistAcpSession } from './session.js'
 import {
   baseIds,
   isAcpSummaryId,
@@ -40,6 +40,26 @@ export type AcpStageResult = {
 /** `<acp tokens="8" type="text">m00001</acp>` prefix emitted by render-refs. */
 const TAG_RE = /^<acp\b[^>]*>[^<]*<\/acp>\n?/
 
+/**
+ * Remove any tags a previous turn already baked into the text. Without this
+ * the prefix grows one duplicate tag per turn, which changes message 1 on
+ * every request and kills the upstream prefix cache.
+ */
+function stripTags(text: string): string {
+  let rest = text
+  while (TAG_RE.test(rest)) {
+    rest = rest.replace(TAG_RE, '')
+  }
+  return rest
+}
+const ANY_TAG_RE = /<acp\b[^>]*>[\s\S]*?<\/acp>\s*/g
+
+/** Remove every ACP ref tag from a string (used for display only). */
+export function stripAcpTags(text: string): string {
+  return text.replace(ANY_TAG_RE, '').trim()
+}
+
+
 function splitTag(text: string): { tag: string; rest: string } {
   const match = TAG_RE.exec(text)
   if (!match) {
@@ -57,6 +77,17 @@ function countTokens(cores: readonly CoreMessage[]): number {
 }
 
 /**
+ * Conversation tokens measured for the request currently in flight. The API
+ * layer pairs it with the billed prompt size to keep the overhead estimate
+ * (system prompt + tool schemas) current.
+ */
+let lastStageTokenCount = 0
+
+export function getLastAcpTokenCount(): number {
+  return lastStageTokenCount
+}
+
+/**
  * Prepend the kernel's ref tags to a message so the model can cite ranges
  * like `m00180–m00205`. Tags ride in a leading text block; the original
  * blocks are preserved verbatim (tool_use / tool_result shape untouched).
@@ -70,15 +101,25 @@ function withTags(message: CcMessage, tags: readonly string[]): CcMessage {
   if (typeof content === 'string') {
     return {
       ...message,
-      message: { ...message.message, content: `${joined}\n${content}` },
+      message: {
+        ...message.message,
+        content: `${joined}\n${stripTags(content)}`,
+      },
     }
   }
   if (Array.isArray(content)) {
+    const blocks = [...content]
+    const head = blocks[0] as { type?: string; text?: unknown } | undefined
+    if (head?.type === 'text' && typeof head.text === 'string') {
+      const cleaned = stripTags(head.text)
+      blocks[0] = cleaned.length > 0 ? { ...head, text: cleaned } : undefined
+    }
+    const pruned = blocks.filter(Boolean) as typeof content
     return {
       ...message,
       message: {
         ...message.message,
-        content: [{ type: 'text', text: joined }, ...content],
+        content: [{ type: 'text', text: joined }, ...pruned],
       },
     }
   }
@@ -103,8 +144,11 @@ export function applyAcpStage(
     return null
   }
 
-  const session = getAcpSession()
   const bases = baseIds(messages)
+  if (bases[0]) {
+    hydrateAcpSession(bases[0], cores.map(core => core.id))
+  }
+  const session = getAcpSession()
   const byBase = new Map<string, CcMessage>()
   bases.forEach((base, index) => {
     const message = messages[index]
@@ -133,6 +177,7 @@ export function applyAcpStage(
   session.state = result.state
   session.contentStore = result.contentStore
   session.lastCores = result.messages
+  persistAcpSession()
 
   // Pass 1: collect ref tags per source message, in kernel order.
   const tagsByBase = new Map<string, string[]>()
@@ -185,6 +230,7 @@ export function applyAcpStage(
   }
 
   session.lastTokenCount = rawTokenCount
+  lastStageTokenCount = rawTokenCount
 
   return {
     messages: rendered,

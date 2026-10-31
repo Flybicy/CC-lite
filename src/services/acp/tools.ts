@@ -22,7 +22,9 @@ import {
 import { z } from 'zod/v4'
 import { buildTool, type ToolDef, type ToolInputJSONSchema } from '../../Tool.js'
 import { lazySchema } from '../../utils/lazySchema.js'
-import { isAcpEnabled } from './config.js'
+import { getAcpContextLimit, getAcpTokenRatio, isAcpEnabled } from './config.js'
+import { formatAcpCacheLine, readAcpLedger, summarizeAcpCache } from './ledger.js'
+import { normalizeCompressRanges } from './parseRanges.js'
 import { getAcpSession } from './session.js'
 
 /**
@@ -78,7 +80,11 @@ export const CompressTool = buildTool({
   },
   async call(args) {
     const session = getAcpSession()
-    const ranges = parseCompressInput(args)
+    // The kernel's schema advertises the line form ("m00150–m00220 topic" +
+    // summary) but acp-kernel 0.0.101's parser only understands the flat
+    // object shape, so normalise the documented forms ourselves first.
+    const normalized = normalizeCompressRanges(args)
+    const ranges = normalized.length > 0 ? normalized : parseCompressInput(args)
     if (ranges.length === 0) {
       return {
         data: {
@@ -301,11 +307,17 @@ export const AcpStatusTool = buildTool({
       session.config,
     )
 
+    const window = getAcpContextLimit()
+    const cacheLine = formatAcpCacheLine(summarizeAcpCache(readAcpLedger()))
     const lines = [
       `Context: ${report.tokenCount} / ${report.modelContextLimit} tokens (${Math.round(report.contextUsage * 100)}% used)`,
+      `Window: ${window} tokens, estimator x${Math.round(getAcpTokenRatio() * 100) / 100} (billed / conversation)`,
       `Blocks: ${report.activeBlocks} active / ${report.totalBlocks} total`,
       `Tokens compressed so far: ${report.tokensCompressed}`,
     ]
+    if (cacheLine) {
+      lines.push(cacheLine)
+    }
     const breakdown = Object.entries(report.breakdown)
       .filter(([, v]) => typeof v === 'number' && v > 0)
       .map(([k, v]) => `${k}=${v}`)

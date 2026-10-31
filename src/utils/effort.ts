@@ -14,6 +14,7 @@ import type { EffortLevel } from 'src/entrypoints/sdk/runtimeTypes.js'
 export type { EffortLevel }
 
 export const EFFORT_LEVELS = [
+  'none',
   'low',
   'medium',
   'high',
@@ -65,7 +66,10 @@ export function modelSupportsMaxEffort(model: string): boolean {
   if (process.env.USER_TYPE === 'ant' && resolveAntModel(model)) {
     return true
   }
-  return false
+  // CC-lite: a model reached through a providers.json tier binding cannot be
+  // capability-probed, so keep the full none→max range available instead of
+  // silently clamping the picker at 'high'.
+  return isProviderRoutingActive()
 }
 
 export function isEffortLevel(value: string): value is EffortLevel {
@@ -87,10 +91,13 @@ export function parseEffortValue(value: unknown): EffortValue | undefined {
 export function toPersistableEffort(
   value: EffortValue | undefined,
 ): EffortLevel | undefined {
-  if (value === 'low' || value === 'medium' || value === 'high') {
+  if (value === 'none' || value === 'low' || value === 'medium' || value === 'high') {
     return value
   }
-  if (value === 'max' && process.env.USER_TYPE === 'ant') {
+  if (
+    value === 'max' &&
+    (process.env.USER_TYPE === 'ant' || isProviderRoutingActive())
+  ) {
     return value
   }
   return undefined

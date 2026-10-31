@@ -17,6 +17,7 @@ import {
 import {
   resolveTierConnection,
   resolveTierConnectionByTier,
+  resolveAdvisorConnection,
 } from '../../utils/providers/tierResolver.js'
 import { isTierAlias } from '../../utils/model/aliases.js'
 import { isDebugToStdErr, logForDebugging } from '../../utils/debug.js'
@@ -95,10 +96,15 @@ export async function getAnthropicClient({
   // tier (pro / plus / se) to a provider, connect to that provider instead of
   // the env-driven default. The bound model string itself was already selected
   // upstream via resolveModelProfileModel() / the tier alias resolver.
+  // Dedicated Advisor slot wins over tier inheritance: when the WebUI binds
+  // one, the advisor's inner query talks to that provider+model even if the
+  // main loop is running elsewhere (or has failed over).
   const tierConn =
-    tierOverride !== undefined && isTierAlias(tierOverride)
-      ? resolveTierConnectionByTier(tierOverride)
-      : resolveTierConnection(source)
+    source === 'advisor'
+      ? (resolveAdvisorConnection() ?? resolveTierConnection(source))
+      : tierOverride !== undefined && isTierAlias(tierOverride)
+        ? resolveTierConnectionByTier(tierOverride)
+        : resolveTierConnection(source)
 
 
   // Provider-scoped custom headers ride along with the routed connection, so

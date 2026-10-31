@@ -172,7 +172,9 @@ export const AdvisorTool = buildTool({
       context.options as unknown as Parameters<typeof getSessionAdvisorModel>[0],
     )
     if (!model) {
-      throw new Error('Advisor is not configured. Set CLAUDE_CODE_ADVISOR_MODEL.')
+      throw new Error(
+        'Advisor is not configured. Bind the Advisor slot in the WebUI (辅助能力 → 顾问模型) or set CLAUDE_CODE_ADVISOR_MODEL.',
+      )
     }
 
     const history = selectAdvisorHistory(context.messages)

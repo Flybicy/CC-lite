@@ -175,7 +175,11 @@ import {
 import { CLAUDE_IN_CHROME_MCP_SERVER_NAME } from './claudeInChrome/common.js'
 import { CHROME_TOOL_SEARCH_INSTRUCTIONS } from './claudeInChrome/prompt.js'
 import { isAdvisorEnabled } from './advisor.js'
-import { getAdvisorToolInstructions } from '../tools/AdvisorTool/prompt.js'
+import {
+  getAdvisorToolInstructions,
+  ADVISOR_TOOL_NAME,
+  type AdvisorCheckpointReason,
+} from '../tools/AdvisorTool/prompt.js'
 import type { MCPServerConnection } from '../services/mcp/types.js'
 import type {
   HookEvent,
@@ -1597,6 +1601,244 @@ export function getMcpInstructionsDeltaAttachment(
   return [{ type: 'mcp_instructions_delta', ...delta }]
 }
 
+/**
+ * Cheap, rule-only escalation detector for the advisor.
+ *
+ * Design constraint: the detector must cost far less than the tokens it saves,
+ * so every signal below is computed from data already in the transcript (tool
+ * names, tool inputs, tool results, token usage). No embeddings, no extra model
+ * call, no self-assessment prompt.
+ *
+ * Signals (any one is enough):
+ *  - consecutive-errors : >= 2 tool results in a row with is_error
+ *  - repeated-call      : same tool + identical arguments >= 3 times
+ *  - repeated-error     : the same normalized error text >= 2 times
+ *  - edit-thrash        : near-identical edits to the same file >= 2 times
+ *  - token-burn         : > 60k output tokens since the last consult
+ *  - long-run           : more tool calls than the session's own rhythm implies
+ *
+ * A consult resets everything: the scan stops at the most recent Advisor call.
+ */
+const ADVISOR_LONG_RUN_BASE = 30
+const ADVISOR_LONG_RUN_MIN = 12
+const ADVISOR_LONG_RUN_MAX = 60
+const ADVISOR_CONSECUTIVE_ERRORS = 2
+const ADVISOR_REPEAT_CALLS = 3
+const ADVISOR_REPEAT_ERRORS = 2
+const ADVISOR_EDIT_THRASH = 2
+const ADVISOR_TOKEN_BURN = 60_000
+const ADVISOR_CHECKPOINT_SCAN_LIMIT = 4000
+
+function toolResultText(block: unknown): string {
+  const content = (block as { content?: unknown }).content
+  if (typeof content === 'string') return content
+  if (Array.isArray(content)) {
+    return content
+      .map(part =>
+        typeof part === 'object' &&
+        part !== null &&
+        (part as { type?: string }).type === 'text'
+          ? String((part as { text?: unknown }).text ?? '')
+          : '',
+      )
+      .join('\n')
+  }
+  return ''
+}
+
+function normalizeErrorText(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/0x[0-9a-f]+/g, '0x')
+    .replace(/\d+/g, '#')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 400)
+}
+
+function trigramSet(text: string): Set<string> {
+  const clean = text.replace(/\s+/g, ' ').slice(0, 4000)
+  const grams = new Set<string>()
+  for (let i = 0; i + 3 <= clean.length; i++) grams.add(clean.slice(i, i + 3))
+  return grams
+}
+
+function jaccard(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0
+  let shared = 0
+  for (const gram of a) if (b.has(gram)) shared++
+  return shared / (a.size + b.size - shared)
+}
+
+type AdvisorEvent =
+  | {
+      kind: 'call'
+      id: string
+      name: string
+      key: string
+      input: Record<string, unknown>
+      msgIndex: number
+    }
+  | { kind: 'result'; id: string; isError: boolean; text: string; msgIndex: number }
+
+export function advisorCheckpointReason(
+  messages: Message[] | undefined,
+): AdvisorCheckpointReason | null {
+  if (!messages?.length) return null
+  const events: AdvisorEvent[] = []
+  const tokensByMsg = new Map<number, number>()
+
+  const start = messages.length - 1
+  const stop = Math.max(0, start - ADVISOR_CHECKPOINT_SCAN_LIMIT)
+  for (let i = stop; i <= start; i++) {
+    const msg = messages[i]
+    if (!msg) continue
+    if (msg.type === 'assistant' && typeof msg.message.content !== 'string') {
+      const usage = (msg.message as { usage?: { output_tokens?: number } }).usage
+      if (typeof usage?.output_tokens === 'number') {
+        tokensByMsg.set(i, usage.output_tokens)
+      }
+      for (const block of msg.message.content) {
+        if (block.type !== 'tool_use') continue
+        const input = ((block as { input?: Record<string, unknown> }).input ??
+          {}) as Record<string, unknown>
+        events.push({
+          kind: 'call',
+          id: block.id,
+          name: block.name,
+          key: `${block.name}\u0000${JSON.stringify(input)}`,
+          input,
+          msgIndex: i,
+        })
+      }
+    } else if (msg.type === 'user' && Array.isArray(msg.message.content)) {
+      for (const block of msg.message.content) {
+        if (!isToolResultBlock(block)) continue
+        events.push({
+          kind: 'result',
+          id: block.tool_use_id,
+          isError: block.is_error === true,
+          text: normalizeErrorText(toolResultText(block)),
+          msgIndex: i,
+        })
+      }
+    }
+  }
+
+  const advisorPositions: number[] = []
+  events.forEach((event, index) => {
+    if (event.kind === 'call' && event.name === ADVISOR_TOOL_NAME) {
+      advisorPositions.push(index)
+    }
+  })
+  const lastAdvisor = advisorPositions.at(-1) ?? -1
+  const segment = events.slice(lastAdvisor + 1)
+  const calls = segment.filter((event): event is Extract<AdvisorEvent, { kind: 'call' }> => event.kind === 'call')
+  const errorById = new Map<string, boolean>()
+  const errorTexts: string[] = []
+  let segmentStartMsg = -1
+  if (lastAdvisor >= 0) {
+    const anchor = events[lastAdvisor]
+    if (anchor) segmentStartMsg = anchor.msgIndex
+  }
+  for (const event of segment) {
+    if (event.kind !== 'result') continue
+    errorById.set(event.id, event.isError)
+    if (event.isError && event.text) errorTexts.push(event.text)
+  }
+
+  let streak = 0
+  for (let i = calls.length - 1; i >= 0; i--) {
+    const call = calls[i]
+    if (!call || errorById.get(call.id) !== true) break
+    streak++
+  }
+  if (streak >= ADVISOR_CONSECUTIVE_ERRORS) return 'stuck'
+
+  const repeats = new Map<string, number>()
+  for (const call of calls) {
+    const seen = (repeats.get(call.key) ?? 0) + 1
+    if (seen >= ADVISOR_REPEAT_CALLS) return 'stuck'
+    repeats.set(call.key, seen)
+  }
+
+  const errorSeen = new Map<string, number>()
+  for (const text of errorTexts) {
+    const seen = (errorSeen.get(text) ?? 0) + 1
+    if (seen >= ADVISOR_REPEAT_ERRORS) return 'stuck'
+    errorSeen.set(text, seen)
+  }
+
+  let editThrash = 0
+  const editByFile = new Map<string, Set<string>>()
+  for (const call of calls) {
+    if (call.name !== 'Edit' && call.name !== 'Write' && call.name !== 'MultiEdit') {
+      continue
+    }
+    const file = String(call.input.file_path ?? call.input.path ?? '')
+    const grams = trigramSet(
+      `${String(call.input.old_string ?? '')}\n${String(call.input.new_string ?? '')}\n${String(call.input.content ?? '')}`,
+    )
+    const previous = editByFile.get(file)
+    if (previous && jaccard(previous, grams) >= 0.7) editThrash++
+    editByFile.set(file, grams)
+  }
+  if (editThrash >= ADVISOR_EDIT_THRASH) return 'stuck'
+
+  let tokens = 0
+  let hasUsage = false
+  for (const [msgIndex, value] of tokensByMsg) {
+    if (msgIndex > segmentStartMsg) {
+      tokens += value
+      hasUsage = true
+    }
+  }
+  if (hasUsage && tokens > ADVISOR_TOKEN_BURN) return 'long'
+
+  // Adapt the long-run threshold to this session's own consult rhythm: measure
+  // the tool calls between past Advisor calls and nudge at twice that gap.
+  const gaps: number[] = []
+  for (let i = 1; i < advisorPositions.length; i++) {
+    const previous = advisorPositions[i - 1]
+    const current = advisorPositions[i]
+    if (previous === undefined || current === undefined) continue
+    let count = 0
+    for (let j = previous + 1; j < current; j++) {
+      if (events[j]?.kind === 'call') count++
+    }
+    gaps.push(count)
+  }
+  gaps.sort((a, b) => a - b)
+  const median = gaps.length ? (gaps[Math.floor(gaps.length / 2)] ?? 0) : 0
+  const longRunThreshold =
+    gaps.length > 0
+      ? Math.min(
+          ADVISOR_LONG_RUN_MAX,
+          Math.max(ADVISOR_LONG_RUN_MIN, Math.round(median * 2)),
+        )
+      : ADVISOR_LONG_RUN_BASE
+  return calls.length > longRunThreshold ? 'long' : null
+}
+
+/** True when a CHECKPOINT has already been shown since the last consult. */
+function checkpointAlreadyShown(messages: Message[] | undefined): boolean {
+  if (!messages?.length) return false
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i]
+    if (!msg) continue
+    if (msg.type === 'attachment' && msg.attachment.type === 'advisor_instructions') {
+      if (msg.attachment.instructions.includes('CHECKPOINT')) return true
+      continue
+    }
+    if (msg.type === 'assistant' && typeof msg.message.content !== 'string') {
+      for (const block of msg.message.content) {
+        if (block.type === 'tool_use' && block.name === ADVISOR_TOOL_NAME) return false
+      }
+    }
+  }
+  return false
+}
+
 export function getAdvisorInstructionsAttachment(
   messages: Message[] | undefined,
 ): Attachment[] {
@@ -1624,8 +1866,12 @@ export function getAdvisorInstructionsAttachment(
     ]
   }
 
+  const checkpoint = checkpointAlreadyShown(messages)
+    ? null
+    : advisorCheckpointReason(messages)
   const instructions = getAdvisorToolInstructions(
     getSettings_DEPRECATED()?.advisorPreference,
+    { checkpoint: checkpoint !== null, reason: checkpoint ?? undefined },
   )
 
   if (
